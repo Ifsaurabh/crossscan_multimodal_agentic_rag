@@ -1,0 +1,116 @@
+{
+  "text_files_checked": 12,
+  "text_files_flagged": 0,
+  "text_details": [
+    {
+      "file": "1-s2.0-S1877050925029461-main",
+      "issues": [],
+      "page_count": 10,
+      "char_count": 47580,
+      "chars_per_page": 4758.0,
+      "heading_count": 14,
+      "garbage_ratio": 0.0033
+    },
+    {
+      "file": "2404.03936v2",
+      "issues": [],
+      "page_count": 38,
+      "char_count": 241453,
+      "chars_per_page": 6354.0,
+      "heading_count": 49,
+      "garbage_ratio": 0.0049
+    },
+    {
+      "file": "2510.26923v1",
+      "issues": [],
+      "page_count": 5,
+      "char_count": 22875,
+      "chars_per_page": 4575.0,
+      "heading_count": 15,
+      "garbage_ratio": 0.0032
+    },
+    {
+      "file": "2602.10481v1",
+      "issues": [],
+      "page_count": 16,
+      "char_count": 45960,
+      "chars_per_page": 2872.5,
+      "heading_count": 51,
+      "garbage_ratio": 0.0047
+    },
+    {
+      "file": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification",
+      "issues": [],
+      "page_count": 30,
+      "char_count": 107871,
+      "chars_per_page": 3595.7,
+      "heading_count": 30,
+      "garbage_ratio": 0.0024
+    },
+    {
+      "file": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape",
+      "issues": [],
+      "page_count": 19,
+      "char_count": 73847,
+      "chars_per_page": 3886.7,
+      "heading_count": 25,
+      "garbage_ratio": 0.001
+    },
+    {
+      "file": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods",
+      "issues": [],
+      "page_count": 13,
+      "char_count": 75513,
+      "chars_per_page": 5808.7,
+      "heading_count": 24,
+      "garbage_ratio": 0.0008
+    },
+    {
+      "file": "Deep learning-based approach to diagnose lung cancer using CT-scan images",
+      "issues": [],
+      "page_count": 16,
+      "char_count": 61671,
+      "chars_per_page": 3854.4,
+      "heading_count": 39,
+      "garbage_ratio": 0.004
+    },
+    {
+      "file": "fmed-12-1567119",
+      "issues": [],
+      "page_count": 10,
+      "char_count": 36050,
+      "chars_per_page": 3605.0,
+      "heading_count": 29,
+      "garbage_ratio": 0.0004
+    },
+    {
+      "file": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery",
+      "issues": [],
+      "page_count": 15,
+      "char_count": 41844,
+      "chars_per_page": 2789.6,
+      "heading_count": 18,
+      "garbage_ratio": 0.0037
+    },
+    {
+      "file": "LungPaper",
+      "issues": [],
+      "page_count": 25,
+      "char_count": 44819,
+      "chars_per_page": 1792.8,
+      "heading_count": 30,
+      "garbage_ratio": 0.0031
+    },
+    {
+      "file": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan",
+      "issues": [],
+      "page_count": 21,
+      "char_count": 76482,
+      "chars_per_page": 3642.0,
+      "heading_count": 22,
+      "garbage_ratio": 0.0029
+    }
+  ],
+  "image_files_flagged": 0,
+  "image_details": []
+}

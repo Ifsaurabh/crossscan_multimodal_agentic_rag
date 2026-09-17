@@ -1,0 +1,64 @@
+{
+  "documents": [
+    {
+      "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+      "pii_redactions": 2,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "2404.03936v2.pdf",
+      "pii_redactions": 3,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "2510.26923v1.pdf",
+      "pii_redactions": 0,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "2602.10481v1.pdf",
+      "pii_redactions": 2,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "pii_redactions": 4,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
+      "pii_redactions": 2,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
+      "pii_redactions": 1,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
+      "pii_redactions": 3,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "fmed-12-1567119.pdf",
+      "pii_redactions": 1,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
+      "pii_redactions": 5,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "LungPaper.pdf",
+      "pii_redactions": 1,
+      "sections_dropped": []
+    },
+    {
+      "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
+      "pii_redactions": 4,
+      "sections_dropped": []
+    }
+  ]
+}

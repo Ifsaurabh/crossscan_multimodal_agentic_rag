@@ -1,0 +1,12 @@
+venv-rag-new/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+data/raw/
+data/text/
+data/images/
+data/prepared/
+data/guarded/
+data/chunks/
