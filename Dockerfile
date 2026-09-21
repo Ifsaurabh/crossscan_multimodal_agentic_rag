@@ -1,7 +1,7 @@
-# CrossScan RAG API image, deployed on Hugging Face Spaces (Docker SDK, free
-# cpu-basic, 16GB RAM). Postgres (Neon) and Neo4j (Aura) are external managed
-# services: set DATABASE_URL, NEO4J_* and GEMINI_API_KEY as Space "Repository
-# secrets" (same values as the local .env).
+# CrossScan RAG API image, deployed on Cloud Run (continuous deployment from
+# GitHub via Cloud Build). Postgres (Neon) and Neo4j (Aura) are external
+# managed services: set DATABASE_URL, NEO4J_* and GEMINI_API_KEY as env vars/
+# secrets on the Cloud Run service (same values as the local .env).
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -25,4 +25,8 @@ COPY src ./src
 # locally (weights aren't pre-cached), not a broken deployment.
 WORKDIR /app/src
 EXPOSE 8000
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Cloud Run injects its own PORT env var (default 8080) and health-checks THAT port, not a
+# fixed one - a hardcoded --port here made the first real deploy fail ("container failed to
+# start and listen on the port... PORT=8080") even though the app itself was fine. Shell form
+# (not exec-form JSON array) so $PORT actually expands; falls back to 8000 for local/non-Cloud-Run use.
+CMD uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000}
