@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS {SCHEMA_NAME}.text_chunks (
     domain TEXT NOT NULL,
     text TEXT NOT NULL,
     embedding_version TEXT NOT NULL,
-    embedding vector({TEXT_EMBEDDING_DIM}) NOT NULL
+    embedding vector({TEXT_EMBEDDING_DIM}) NOT NULL,
+    text_search tsvector GENERATED ALWAYS AS (to_tsvector('english', text)) STORED
 );
 
 CREATE INDEX IF NOT EXISTS text_chunks_embedding_idx
@@ -34,6 +35,9 @@ CREATE INDEX IF NOT EXISTS text_chunks_embedding_idx
 
 CREATE INDEX IF NOT EXISTS text_chunks_domain_idx
     ON {SCHEMA_NAME}.text_chunks (domain);
+
+CREATE INDEX IF NOT EXISTS text_chunks_text_search_idx
+    ON {SCHEMA_NAME}.text_chunks USING gin (text_search);
 
 CREATE TABLE IF NOT EXISTS {SCHEMA_NAME}.images (
     image_file TEXT PRIMARY KEY,
