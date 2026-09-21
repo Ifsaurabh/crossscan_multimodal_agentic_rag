@@ -1,0 +1,65 @@
+name: Live tests + evaluation (weekly / manual)
+
+# The only workflow that spends real Gemini quota and touches the real
+# deployed Postgres/Neo4j (Neon + Aura). Never runs on push - only on a
+# weekly schedule and on-demand. Needs 4 repo secrets set once in
+# GitHub -> Settings -> Secrets and variables -> Actions:
+#   GEMINI_API_KEY, DATABASE_URL, NEO4J_URI, NEO4J_PASSWORD
+# (same values as your real .env - never commit them).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      eval_limit:
+        description: "Golden-set questions to run (blank = all 36 - mind the daily Gemini quota)"
+        required: false
+        default: "6"
+      llm_metrics:
+        description: "LLM-judge metrics (spends extra quota)"
+        required: false
+        default: "none"
+        type: choice
+        options: ["none", "deepeval", "ragas", "both"]
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  NEO4J_URI: ${{ secrets.NEO4J_URI }}
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+  SCHEMA_NAME: rag_new
+  LANGFUSE_DISABLED: "1"
+  ONLINE_EVAL_SAMPLE_RATE: "0"
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Live smoke tests (real Gemini + Neo4j Aura)
+        run: python -m pytest tests/live --run-live -q
+
+  evaluation:
+    needs: live-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - name: Run the golden-set evaluation
+        working-directory: src
+        run: >
+          python run_evaluation.py
+          --limit "${{ github.event.inputs.eval_limit || '6' }}"
+          --llm-metrics "${{ github.event.inputs.llm_metrics || 'none' }}"
+          --no-mlflow

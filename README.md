@@ -1,3 +1,14 @@
+---
+title: CrossScan
+emoji: 🔬
+colorFrom: teal
+colorTo: indigo
+sdk: docker
+app_port: 8000
+pinned: false
+license: mit
+---
+
 # CrossScan
 
 (Project folder name is still `RAG-NEW` pending a rename.)

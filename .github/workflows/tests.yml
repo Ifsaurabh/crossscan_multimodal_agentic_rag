@@ -1,0 +1,55 @@
+name: Tests (push / PR)
+
+# Fast feedback on every push and PR: unit tests (fully faked) + integration
+# tests (real SQL against a real Postgres+pgvector container, throwaway
+# schema, dropped after). No Neo4j, no Gemini calls here - see live-eval.yml
+# for those.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rag_new_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rag_new_ci
+      SCHEMA_NAME: rag_new
+      LANGFUSE_DISABLED: "1"
+      ONLINE_EVAL_SAMPLE_RATE: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Unit tests
+        run: python -m pytest tests/unit -q
+
+      - name: Integration tests (real Postgres, throwaway schema)
+        run: python -m pytest tests/integration --run-integration -q

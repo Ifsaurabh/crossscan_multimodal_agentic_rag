@@ -1,0 +1,55 @@
+name: Nightly (full suite + dependency report)
+
+# Same as the push workflow, run once a day regardless of activity, plus an
+# outdated-dependency report. Real drift PROTECTION comes from Dependabot
+# (see .github/dependabot.yml) - this job is a confidence re-run and a
+# visibility report, not an auto-upgrade-and-test cycle.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"  # 03:17 UTC daily - avoid the top-of-hour rush other repos use
+  workflow_dispatch: {}
+
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rag_new_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rag_new_ci
+      SCHEMA_NAME: rag_new
+      LANGFUSE_DISABLED: "1"
+      ONLINE_EVAL_SAMPLE_RATE: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Unit + integration tests
+        run: |
+          python -m pytest tests/unit -q
+          python -m pytest tests/integration --run-integration -q
+
+      - name: Outdated dependency report (informational only, never fails the job)
+        run: pip list --outdated || true
