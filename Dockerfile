@@ -14,7 +14,12 @@ COPY requirements.txt .
 # otherwise - install the CPU-only build from PyTorch's own index FIRST, so the requirements.txt
 # install below finds the pinned version already satisfied and never touches the CUDA wheel.
 # (Windows PyPI wheels are CPU-only by default, which is why this wasn't visible in local dev.)
-RUN pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+# torchvision is installed here too (not left to requirements.txt): it's only a transitive
+# dependency (via docling/sentence-transformers) with no version pinned anywhere, so pip was
+# resolving it from plain PyPI - a build whose compiled ops don't match the CPU-only torch 2.14.0
+# build above ("RuntimeError: operator torchvision::nms does not exist" at runtime). Installing it
+# from the same PyTorch CPU index as torch makes pip resolve a version actually paired with it.
+RUN pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 
 COPY src ./src
