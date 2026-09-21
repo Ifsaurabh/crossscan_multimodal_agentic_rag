@@ -6,8 +6,15 @@ __pycache__/
 .dvc/
 .env
 mlruns/
-data/
-!data/images
+# Heavy, ingestion-only subfolders - not needed at runtime. NOT excluding data/ itself: Docker
+# can't reliably un-ignore a nested path (e.g. data/images) once its parent is excluded, so this
+# lists exactly what to skip instead of excluding the whole folder and trying to negate one part.
+data/raw/
+data/text/
+data/prepared/
+data/guarded/
+data/chunks/
+data/embeddings/
 langfuse/
 tests/
 *.md
