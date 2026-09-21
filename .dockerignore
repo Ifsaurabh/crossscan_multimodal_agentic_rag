@@ -1,0 +1,12 @@
+venv-rag-new/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.dvc/
+.env
+mlruns/
+data/
+langfuse/
+tests/
+*.md

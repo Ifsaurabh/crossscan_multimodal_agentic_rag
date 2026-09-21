@@ -1,0 +1,261 @@
+{
+  "1-s2.0-S1877050925029461-main.pdf": {
+    "verified": {
+      "methods": [
+        "YOLOv11",
+        "CapsNet",
+        "Full Image CapsNet",
+        "Cropped Image CapsNet",
+        "Faster R-CNN"
+      ],
+      "datasets": [],
+      "metrics": [
+        "precision",
+        "FN rate",
+        "accuracy"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "2404.03936v2.pdf": {
+    "verified": {
+      "methods": [
+        "Deep learning",
+        "machine learning",
+        "statistical learning",
+        "RNNs",
+        "1D-CNNs",
+        "3D-CNNs"
+      ],
+      "datasets": [],
+      "metrics": []
+    },
+    "unverified": {
+      "methods": [
+        "hybrid CNN and RNN architectures"
+      ],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "2510.26923v1.pdf": {
+    "verified": {
+      "methods": [
+        "deep learning",
+        "curriculum learning",
+        "static curriculum strategies",
+        "ScaleAdaptive Curriculum Learning",
+        "SACL",
+        "adaptive epoch scheduling",
+        "hard sample injection",
+        "scale-aware optimization",
+        "YOLOv11",
+        "static curriculum learning",
+        "YOLO"
+      ],
+      "datasets": [
+        "LUNA25"
+      ],
+      "metrics": [
+        "mAP 50",
+        "mAP50"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "2602.10481v1.pdf": {
+    "verified": {
+      "methods": [
+        "Large Language Model",
+        "LLM",
+        "authenticated prompts",
+        "authenticated context",
+        "tamper-evident hash chains",
+        "policy algebra",
+        "resource controls",
+        "LLM-based semantic validation"
+      ],
+      "datasets": [],
+      "metrics": [
+        "detection",
+        "false positives",
+        "overhead"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf": {
+    "verified": {
+      "methods": [
+        "VGG16",
+        "Grad-CAM",
+        "data augmentation",
+        "Vision Transformers",
+        "3D CNNs",
+        "ResNet50",
+        "MobileNetV2",
+        "InceptionV3",
+        "Gradient-weighted Grad-CAM"
+      ],
+      "datasets": [],
+      "metrics": [
+        "test accuracy",
+        "accuracy",
+        "diagnostic accuracy"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf": {
+    "verified": {
+      "methods": [
+        "classification and regression tree",
+        "CART",
+        "maximum entropy",
+        "gmoMaxEnt",
+        "minimum distance",
+        "minDistance",
+        "support vector machine",
+        "SVM",
+        "random forest",
+        "RF",
+        "Supervised classification"
+      ],
+      "datasets": [
+        "Sentinel-2",
+        "Sentinel-2 (S-2) satellite imagery",
+        "Sentinel-2 data",
+        "Sentinel-2 SR"
+      ],
+      "metrics": [
+        "overall accuracy",
+        "OA",
+        "kappa coefficient"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf": {
+    "verified": {
+      "methods": [
+        "CNN",
+        "ConvNeXt"
+      ],
+      "datasets": [
+        "Kaggle"
+      ],
+      "metrics": []
+    },
+    "unverified": {
+      "methods": [
+        "Convolutional Neural Network"
+      ],
+      "datasets": [],
+      "metrics": [
+        "testing accuracy"
+      ]
+    }
+  },
+  "fmed-12-1567119.pdf": {
+    "verified": {
+      "methods": [
+        "YOLO",
+        "YOLOv8"
+      ],
+      "datasets": [],
+      "metrics": [
+        "precision",
+        "recall",
+        "accuracy"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf": {
+    "verified": {
+      "methods": [
+        "deep learning",
+        "Inception-v3",
+        "DenseNet121",
+        "ResNet-50",
+        "transfer learning",
+        "CNN",
+        "data fusion techniques"
+      ],
+      "datasets": [],
+      "metrics": [
+        "recall",
+        "accuracy",
+        "precision",
+        "F 1score"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "LungPaper.pdf": {
+    "verified": {
+      "methods": [
+        "two-dimensional Discrete Wavelet Transform",
+        "Discrete Wavelet Transform",
+        "DWT",
+        "Deeply Supervised MultiResUNet",
+        "deep learning",
+        "discrete wavelet transform",
+        "MultiResUNet",
+        "2D DWT",
+        "attention mechanism"
+      ],
+      "datasets": [
+        "LOTUS"
+      ],
+      "metrics": [
+        "dice coefficient"
+      ]
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  },
+  "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf": {
+    "verified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    },
+    "unverified": {
+      "methods": [],
+      "datasets": [],
+      "metrics": []
+    }
+  }
+}

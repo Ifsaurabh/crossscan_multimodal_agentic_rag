@@ -10,3 +10,10 @@ data/images/
 data/prepared/
 data/guarded/
 data/chunks/
+data/embeddings/
+
+# MLflow local file store
+mlruns/
+
+# Generated run reports (live query / latency / guardrail probes): reproducible, and they contain real answers
+reports/

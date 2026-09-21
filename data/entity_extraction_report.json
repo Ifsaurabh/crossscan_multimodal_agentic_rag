@@ -1,0 +1,122 @@
+{
+  "model": "gemini-3.6-flash",
+  "documents": [
+    {
+      "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+      "methods_count": 5,
+      "datasets_count": 0,
+      "metrics_count": 3,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 29.0
+    },
+    {
+      "source_pdf": "2404.03936v2.pdf",
+      "methods_count": 6,
+      "datasets_count": 0,
+      "metrics_count": 0,
+      "unverified_count": 1,
+      "unverified_items": {
+        "methods": [
+          "hybrid CNN and RNN architectures"
+        ],
+        "datasets": [],
+        "metrics": []
+      },
+      "latency_seconds": 8.3
+    },
+    {
+      "source_pdf": "2510.26923v1.pdf",
+      "methods_count": 11,
+      "datasets_count": 1,
+      "metrics_count": 2,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 8.9
+    },
+    {
+      "source_pdf": "2602.10481v1.pdf",
+      "methods_count": 8,
+      "datasets_count": 0,
+      "metrics_count": 3,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 21.0
+    },
+    {
+      "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "methods_count": 9,
+      "datasets_count": 0,
+      "metrics_count": 3,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 8.2
+    },
+    {
+      "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
+      "methods_count": 11,
+      "datasets_count": 4,
+      "metrics_count": 3,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 13.0
+    },
+    {
+      "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
+      "skipped": true
+    },
+    {
+      "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
+      "methods_count": 2,
+      "datasets_count": 1,
+      "metrics_count": 0,
+      "unverified_count": 2,
+      "unverified_items": {
+        "methods": [
+          "Convolutional Neural Network"
+        ],
+        "datasets": [],
+        "metrics": [
+          "testing accuracy"
+        ]
+      },
+      "latency_seconds": 12.5
+    },
+    {
+      "source_pdf": "fmed-12-1567119.pdf",
+      "methods_count": 2,
+      "datasets_count": 0,
+      "metrics_count": 3,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 5.9
+    },
+    {
+      "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
+      "methods_count": 7,
+      "datasets_count": 0,
+      "metrics_count": 4,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 15.5
+    },
+    {
+      "source_pdf": "LungPaper.pdf",
+      "methods_count": 9,
+      "datasets_count": 1,
+      "metrics_count": 1,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 11.6
+    },
+    {
+      "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
+      "methods_count": 0,
+      "datasets_count": 0,
+      "metrics_count": 0,
+      "unverified_count": 0,
+      "unverified_items": null,
+      "latency_seconds": 7.3
+    }
+  ]
+}

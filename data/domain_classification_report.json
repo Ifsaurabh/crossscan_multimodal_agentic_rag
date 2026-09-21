@@ -1,0 +1,82 @@
+{
+  "threshold": 0.6,
+  "documents": [
+    {
+      "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.6765,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "2404.03936v2.pdf",
+      "domain": "land-cover",
+      "best_seed_score": 0.7275,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "2510.26923v1.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.6609,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "2602.10481v1.pdf",
+      "domain": "protecting-context-and-prompts-deterministic",
+      "best_seed_score": 0.5343,
+      "created_new_domain": true
+    },
+    {
+      "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.7097,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
+      "domain": "land-cover",
+      "best_seed_score": 0.7532,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.6632,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.7563,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "fmed-12-1567119.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.7039,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
+      "domain": "land-cover",
+      "best_seed_score": 0.7299,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "LungPaper.pdf",
+      "domain": "lung-cancer",
+      "best_seed_score": 0.7078,
+      "created_new_domain": false
+    },
+    {
+      "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
+      "domain": "land-cover",
+      "best_seed_score": 0.7345,
+      "created_new_domain": false
+    }
+  ],
+  "discovered_domains": [
+    "lung-cancer",
+    "land-cover",
+    "protecting-context-and-prompts-deterministic"
+  ]
+}
