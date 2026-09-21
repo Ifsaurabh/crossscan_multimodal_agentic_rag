@@ -6,11 +6,13 @@ __pycache__/
 
 data/raw/
 data/text/
-data/images/
 data/prepared/
 data/guarded/
 data/chunks/
 data/embeddings/
+# data/images/ is intentionally tracked (not ignored) - the deployed Streamlit UI needs these
+# ~174 source figures shipped in the Docker image; Cloud Build clones from GitHub, so anything
+# gitignored is invisible to it regardless of what .dockerignore allows.
 
 # MLflow local file store
 mlruns/
