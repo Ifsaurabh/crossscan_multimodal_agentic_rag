@@ -1,5 +1,6 @@
 import threading
 from collections import deque
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
@@ -14,9 +15,37 @@ import memory
 import online_report
 import quotas
 import usage_tracker
-from db import get_connection
+from db import close_pool, connection
+from graph_db import close_driver
 
-app = FastAPI(title="CrossScan RAG API", version="0.2.0")
+def _warm_up_embedding_model():
+    """Loads the query-embedding model in the background so the first real
+    question does not pay the load time. A failure here is only logged: the
+    model is simply loaded on first use instead."""
+    try:
+        from retrieval_executor import get_embedding_model
+
+        get_embedding_model()
+    except Exception as e:
+        print(f"   (embedding model warm-up skipped: {e})")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Runs once at startup: makes the .env admin account exist, and starts
+    loading the embedding model without blocking the API from starting."""
+    try:
+        with connection() as conn:
+            auth.ensure_admin_from_env(conn)
+    except Exception as e:
+        print(f"   (admin sync skipped: {e})")
+    threading.Thread(target=_warm_up_embedding_model, name="warm-embedding-model", daemon=True).start()
+    yield
+    close_pool()
+    close_driver()
+
+
+app = FastAPI(title="CrossScan RAG API", version="0.2.0", lifespan=lifespan)
 
 _graph = None
 _graph_lock = threading.Lock()
@@ -87,11 +116,9 @@ def get_graph():
 
 
 def db_conn():
-    conn = get_connection()
-    try:
+    """One pooled connection per request, handed back when the request ends."""
+    with connection() as conn:
         yield conn
-    finally:
-        conn.close()
 
 
 def _bearer_token(authorization: Optional[str]) -> Optional[str]:

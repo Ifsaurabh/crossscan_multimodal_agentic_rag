@@ -4,63 +4,63 @@
   "documents": [
     {
       "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
-      "chunks_embedded": 32,
-      "latency_seconds": 37.306
+      "chunks_embedded": 33,
+      "latency_seconds": 36.834
     },
     {
       "source_pdf": "2404.03936v2.pdf",
       "chunks_embedded": 131,
-      "latency_seconds": 107.901
+      "latency_seconds": 112.908
     },
     {
       "source_pdf": "2510.26923v1.pdf",
       "chunks_embedded": 15,
-      "latency_seconds": 18.981
+      "latency_seconds": 19.488
     },
     {
       "source_pdf": "2602.10481v1.pdf",
       "chunks_embedded": 43,
-      "latency_seconds": 46.195
+      "latency_seconds": 41.785
     },
     {
       "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
       "chunks_embedded": 77,
-      "latency_seconds": 91.938
+      "latency_seconds": 97.813
     },
     {
       "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
       "chunks_embedded": 46,
-      "latency_seconds": 54.423
+      "latency_seconds": 59.498
     },
     {
       "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
-      "chunks_embedded": 54,
-      "latency_seconds": 70.24
+      "chunks_embedded": 55,
+      "latency_seconds": 65.66
     },
     {
       "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
       "chunks_embedded": 52,
-      "latency_seconds": 50.922
+      "latency_seconds": 48.366
     },
     {
       "source_pdf": "fmed-12-1567119.pdf",
       "chunks_embedded": 46,
-      "latency_seconds": 50.35
+      "latency_seconds": 48.002
     },
     {
       "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
       "chunks_embedded": 26,
-      "latency_seconds": 36.53
+      "latency_seconds": 39.259
     },
     {
       "source_pdf": "LungPaper.pdf",
       "chunks_embedded": 36,
-      "latency_seconds": 43.024
+      "latency_seconds": 43.153
     },
     {
       "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
-      "chunks_embedded": 67,
-      "latency_seconds": 95.846
+      "chunks_embedded": 70,
+      "latency_seconds": 88.171
     }
   ]
 }

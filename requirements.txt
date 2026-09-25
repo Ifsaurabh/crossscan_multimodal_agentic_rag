@@ -10,6 +10,7 @@ pytest
 Faker==40.39.0
 sentence-transformers
 psycopg[binary]
+psycopg-pool
 pgvector
 python-dotenv
 neo4j

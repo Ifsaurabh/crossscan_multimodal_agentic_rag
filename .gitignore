@@ -2,7 +2,46 @@ venv-rag-new/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# --- Secrets and local config: NEVER commit. .env.example (placeholders only) stays tracked. ---
 .env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+service-account*.json
+
+# --- Screenshots of traces / dashboards: they show real questions, answers and project ids ---
+screenshots/
+
+# --- Local tool state and caches ---
+.deepeval/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
+*.log
+
+# --- Editor and OS files ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Claude Code: personal settings stay local ---
+.claude/settings.local.json
+
+# --- Personal working notes (not part of the product) ---
+improvement_stories.md
+context_prompt.md
+plannings.md
+
+# --- Local-only demo: the tool-calling pattern behind the admin toggle in chat_app.py ---
+src/agentic_demo.py
 
 data/raw/
 data/text/

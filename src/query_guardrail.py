@@ -1,6 +1,6 @@
 import re
 
-# Same pattern as src/ingestion_guardrails.py (Stage 3b) - deterministic,
+# Same pattern as src/ingestion_guardrails.py -- deterministic,
 # no LLM call, so PII never reaches any LLM in the first place.
 EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
@@ -62,7 +62,7 @@ def detect_medical_advice_framing(text: str) -> bool:
 
 
 def check_input(query: str) -> dict:
-    """Stage 7 Input Guardrail. Deterministic, no LLM call - runs before
+    """Input Guardrail. Deterministic, no LLM call - runs before
     anything else touches the query (including the cache check), so PII
     never gets used as a cache key or sent anywhere."""
     cleaned_query, pii_redactions = redact_pii(query)

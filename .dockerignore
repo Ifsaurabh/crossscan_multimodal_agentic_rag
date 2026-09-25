@@ -18,3 +18,9 @@ data/embeddings/
 langfuse/
 tests/
 *.md
+# Never needed in the image (and screenshots / notebooks can contain real questions and data)
+.github/
+screenshots/
+reports/
+.deepeval/
+*.ipynb

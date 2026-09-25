@@ -19,7 +19,7 @@ import random
 import threading
 
 import llm_connection
-from db import SCHEMA_NAME, get_connection
+from db import SCHEMA_NAME, connection
 from run_evaluation import collect_contexts
 
 DEFAULT_SAMPLE_RATE = 0.1
@@ -139,19 +139,21 @@ def maybe_score(
     resolved = " | ".join(sq.get("sub_query", "") for sq in result.get("sub_queries", []) if sq.get("sub_query"))
     judged_query = resolved or query
     judge_fn = judge_fn or judge
-    conn_factory = conn_factory or get_connection
 
     def run():
-        conn = None
         try:
             scores = judge_fn(judged_query, answer, contexts)
-            conn = conn_factory()
-            record_score(conn, message_id, scores)
+            if conn_factory is None:
+                with connection() as conn:
+                    record_score(conn, message_id, scores)
+            else:
+                conn = conn_factory()
+                try:
+                    record_score(conn, message_id, scores)
+                finally:
+                    conn.close()
         except Exception as e:
             print(f"   (online evaluation skipped: {e})")
-        finally:
-            if conn is not None:
-                conn.close()
 
     if background:
         threading.Thread(target=run, name="online-eval", daemon=True).start()

@@ -23,6 +23,9 @@ on:
         type: choice
         options: ["none", "deepeval", "ragas", "both"]
 
+permissions:
+  contents: read
+
 env:
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -36,26 +39,34 @@ env:
 jobs:
   live-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-      - run: pip install -r requirements.txt
+      - name: Install dependencies (CPU-only torch first, because the default Linux wheel pulls several GB of CUDA)
+        run: |
+          pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
       - name: Live smoke tests (real Gemini + Neo4j Aura)
         run: python -m pytest tests/live --run-live -q
 
   evaluation:
     needs: live-smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-      - run: pip install -r requirements.txt
+      - name: Install dependencies (CPU-only torch first, because the default Linux wheel pulls several GB of CUDA)
+        run: |
+          pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
       - name: Run the golden-set evaluation
         working-directory: src
         run: >

@@ -1,35 +1,25 @@
+import threading
+
 from sentence_transformers import SentenceTransformer
 
-from db import get_connection, SCHEMA_NAME
+from db import connection, SCHEMA_NAME
 from graph_db import get_driver
 from embedding_config import TEXT_MODEL_NAME
 from retrieval_config import VECTOR_TOP_K, GRAPH_TOP_K
 
-FULLTEXT_SETUP_SQL = f"""
-ALTER TABLE {SCHEMA_NAME}.text_chunks
-    ADD COLUMN IF NOT EXISTS text_search tsvector
-    GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
-
-CREATE INDEX IF NOT EXISTS text_chunks_fulltext_idx
-    ON {SCHEMA_NAME}.text_chunks USING GIN (text_search);
-"""
-
 _model = None
+# A background warm-up and a first question can ask for the model at the same
+# moment; the lock makes the second caller wait for the load instead of
+# starting a duplicate one.
+_model_lock = threading.Lock()
 
 
 def get_embedding_model():
     global _model
-    if _model is None:
-        _model = SentenceTransformer(TEXT_MODEL_NAME)
+    with _model_lock:
+        if _model is None:
+            _model = SentenceTransformer(TEXT_MODEL_NAME)
     return _model
-
-
-def setup_fulltext_index():
-    conn = get_connection()
-    conn.execute(FULLTEXT_SETUP_SQL)
-    conn.commit()
-    conn.close()
-    print("Full-text search column/index ready on text_chunks.")
 
 
 def embed_query(query_text: str):
@@ -43,7 +33,6 @@ def vector_search(query_text: str, domain: str = None, source_pdfs: list = None,
     source_pdf values (used for graph-narrowed 'both' retrieval)."""
     query_vec = embed_query(query_text)
 
-    conn = get_connection()
     where_clauses = []
     where_values = []
 
@@ -56,18 +45,18 @@ def vector_search(query_text: str, domain: str = None, source_pdfs: list = None,
 
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
-    cur = conn.execute(
-        f"""SELECT c.chunk_id, c.text, c.source_pdf, c.section, c.page_start, c.page_end,
-                   c.parent_id, p.text AS parent_text, 1 - (c.embedding <=> %s) AS similarity
-            FROM {SCHEMA_NAME}.text_chunks c
-            JOIN {SCHEMA_NAME}.text_parents p ON c.parent_id = p.parent_id
-            {where_sql}
-            ORDER BY c.embedding <=> %s
-            LIMIT %s""",
-        [query_vec] + where_values + [query_vec, top_k],
-    )
-    rows = cur.fetchall()
-    conn.close()
+    with connection() as conn:
+        cur = conn.execute(
+            f"""SELECT c.chunk_id, c.text, c.source_pdf, c.section, c.page_start, c.page_end,
+                       c.parent_id, p.text AS parent_text, 1 - (c.embedding <=> %s) AS similarity
+                FROM {SCHEMA_NAME}.text_chunks c
+                JOIN {SCHEMA_NAME}.text_parents p ON c.parent_id = p.parent_id
+                {where_sql}
+                ORDER BY c.embedding <=> %s
+                LIMIT %s""",
+            [query_vec] + where_values + [query_vec, top_k],
+        )
+        rows = cur.fetchall()
 
     return [
         {
@@ -86,7 +75,6 @@ def hybrid_vector_search(query_text: str, domain: str = None, top_k: int = VECTO
     query_vec = embed_query(query_text)
     fetch_k = top_k * 3
 
-    conn = get_connection()
     where_domain = "AND c.domain = %s" if domain else ""
 
     semantic_params = [query_vec]
@@ -94,48 +82,47 @@ def hybrid_vector_search(query_text: str, domain: str = None, top_k: int = VECTO
         semantic_params.append(domain)
     semantic_params += [query_vec, fetch_k]
 
-    cur = conn.execute(
-        f"""SELECT c.chunk_id, 1 - (c.embedding <=> %s) AS similarity
-            FROM {SCHEMA_NAME}.text_chunks c
-            WHERE TRUE {where_domain}
-            ORDER BY c.embedding <=> %s
-            LIMIT %s""",
-        semantic_params,
-    )
-    semantic_ranked = [row[0] for row in cur.fetchall()]
+    with connection() as conn:
+        cur = conn.execute(
+            f"""SELECT c.chunk_id, 1 - (c.embedding <=> %s) AS similarity
+                FROM {SCHEMA_NAME}.text_chunks c
+                WHERE TRUE {where_domain}
+                ORDER BY c.embedding <=> %s
+                LIMIT %s""",
+            semantic_params,
+        )
+        semantic_ranked = [row[0] for row in cur.fetchall()]
 
-    cur = conn.execute(
-        f"""SELECT c.chunk_id
-            FROM {SCHEMA_NAME}.text_chunks c
-            WHERE c.text_search @@ plainto_tsquery('english', %s) {where_domain}
-            ORDER BY ts_rank_cd(c.text_search, plainto_tsquery('english', %s)) DESC
-            LIMIT %s""",
-        [query_text] + ([domain] if domain else []) + [query_text, fetch_k],
-    )
-    keyword_ranked = [row[0] for row in cur.fetchall()]
+        cur = conn.execute(
+            f"""SELECT c.chunk_id
+                FROM {SCHEMA_NAME}.text_chunks c
+                WHERE c.text_search @@ plainto_tsquery('english', %s) {where_domain}
+                ORDER BY ts_rank_cd(c.text_search, plainto_tsquery('english', %s)) DESC
+                LIMIT %s""",
+            [query_text] + ([domain] if domain else []) + [query_text, fetch_k],
+        )
+        keyword_ranked = [row[0] for row in cur.fetchall()]
 
-    rrf_scores = {}
-    k = 60
-    for rank, chunk_id in enumerate(semantic_ranked):
-        rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0) + 1 / (k + rank + 1)
-    for rank, chunk_id in enumerate(keyword_ranked):
-        rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0) + 1 / (k + rank + 1)
+        rrf_scores = {}
+        k = 60
+        for rank, chunk_id in enumerate(semantic_ranked):
+            rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0) + 1 / (k + rank + 1)
+        for rank, chunk_id in enumerate(keyword_ranked):
+            rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0) + 1 / (k + rank + 1)
 
-    top_chunk_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)[:top_k]
-    if not top_chunk_ids:
-        conn.close()
-        return []
+        top_chunk_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)[:top_k]
+        if not top_chunk_ids:
+            return []
 
-    cur = conn.execute(
-        f"""SELECT c.chunk_id, c.text, c.source_pdf, c.section, c.page_start, c.page_end,
-                   c.parent_id, p.text AS parent_text
-            FROM {SCHEMA_NAME}.text_chunks c
-            JOIN {SCHEMA_NAME}.text_parents p ON c.parent_id = p.parent_id
-            WHERE c.chunk_id = ANY(%s)""",
-        (top_chunk_ids,),
-    )
-    rows = {r[0]: r for r in cur.fetchall()}
-    conn.close()
+        cur = conn.execute(
+            f"""SELECT c.chunk_id, c.text, c.source_pdf, c.section, c.page_start, c.page_end,
+                       c.parent_id, p.text AS parent_text
+                FROM {SCHEMA_NAME}.text_chunks c
+                JOIN {SCHEMA_NAME}.text_parents p ON c.parent_id = p.parent_id
+                WHERE c.chunk_id = ANY(%s)""",
+            (top_chunk_ids,),
+        )
+        rows = {r[0]: r for r in cur.fetchall()}
 
     return [
         {
@@ -162,7 +149,6 @@ def graph_search(query_text: str, top_k: int = GRAPH_TOP_K):
                LIMIT 1000"""
         )
         all_rows = [dict(r) for r in result]
-    driver.close()
 
     matched = [
         r for r in all_rows
@@ -199,9 +185,34 @@ def get_images_for_sections(chunk_ids: list = None, source_pdfs: list = None):
                 source_pdfs=source_pdfs,
             )
         images = [dict(r) for r in result]
-    driver.close()
     return images
 
 
-if __name__ == "__main__":
-    setup_fulltext_index()
+def get_tables_for_sections(chunk_ids: list = None, source_pdfs: list = None):
+    """Same shape as get_images_for_sections() - Table nodes store their own
+    text (unlike Image, which just points at a file), so it's returned here
+    directly, not just a filename."""
+    if not chunk_ids and not source_pdfs:
+        return []
+
+    driver = get_driver()
+    with driver.session() as session:
+        if chunk_ids:
+            result = session.run(
+                """MATCH (t:Table)-[:NEAR_SECTION]->(s:Section)
+                   MATCH (t)-[:APPEARS_IN]->(p:Paper)
+                   WHERE s.chunk_id IN $chunk_ids
+                   RETURN DISTINCT t.table_id AS table_id, t.text AS text, t.page AS page,
+                          s.chunk_id AS chunk_id, p.source_pdf AS source_pdf""",
+                chunk_ids=chunk_ids,
+            )
+        else:
+            result = session.run(
+                """MATCH (t:Table)-[:APPEARS_IN]->(p:Paper)
+                   WHERE p.source_pdf IN $source_pdfs
+                   RETURN DISTINCT t.table_id AS table_id, t.text AS text, t.page AS page,
+                          p.source_pdf AS source_pdf""",
+                source_pdfs=source_pdfs,
+            )
+        tables = [dict(r) for r in result]
+    return tables

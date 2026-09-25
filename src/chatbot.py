@@ -1,4 +1,8 @@
+import contextlib
+import sys
 import time
+
+import psycopg
 
 import chat_store
 import memory
@@ -7,9 +11,10 @@ import query_guardrail
 import quotas
 import usage_tracker
 from chat_store import SessionNotFound
-from db import get_connection
+from db import connection
 
 MAX_MESSAGE_CHARS = 2000
+DATABASE_DOWN_REASON = "the database could not be reached"
 
 
 class ServiceUnavailable(Exception):
@@ -111,9 +116,12 @@ def handle_message(
     if len(text) > MAX_MESSAGE_CHARS:
         raise ValueError(f"Message is too long (max {MAX_MESSAGE_CHARS} characters).")
 
-    own_conn = conn is None
-    conn = conn or get_connection()
+    # A connection passed in belongs to the caller. Otherwise one is borrowed
+    # from the pool for this turn and handed back in the finally block.
+    borrowed = contextlib.ExitStack()
     try:
+        if conn is None:
+            conn = borrowed.enter_context(connection())
         user_id = user["user_id"]
 
         command = memory.parse_command(text)
@@ -147,7 +155,7 @@ def handle_message(
         # Only a limited number of questions run at once; when every slot is
         # taken the user gets a "busy" refusal (not charged) instead of a
         # long wait. The slot is taken before usage tracking begins.
-        with quotas.concurrency_limiter.slot():
+        with contextlib.nullcontext() if quotas.is_unlimited(user) else quotas.concurrency_limiter.slot():
             usage_tracker.begin_request()
             start = time.time()
             try:
@@ -213,6 +221,10 @@ def handle_message(
             cache_hit=cache_hit, guardrail_flags=flags, sources=sources, images=images,
             latency_s=latency, usage=usage, message_id=assistant_message_id,
         )
+    except psycopg.OperationalError as e:
+        # Postgres unreachable (Neon waking or down), a connection lost mid-turn, or the
+        # pool timing out (psycopg_pool.PoolTimeout is one of these). Same friendly
+        # answer as a model outage, instead of a crash.
+        raise ServiceUnavailable(DATABASE_DOWN_REASON) from e
     finally:
-        if own_conn:
-            conn.close()
+        borrowed.__exit__(*sys.exc_info())

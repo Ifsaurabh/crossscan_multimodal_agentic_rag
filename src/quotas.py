@@ -9,11 +9,15 @@ from db import SCHEMA_NAME
 # (daily requests, daily tokens) per role. Overridable per user in the
 # users table, and globally via environment variables.
 _ROLE_DEFAULTS = {
-    # Decision 2 (user): open sign-up, each user gets 2 messages a day for now
-    # (a first question and one follow-up). Raise USER_DAILY_REQUEST_LIMIT later.
-    "user": (2, 200_000),
-    "admin": (500, 5_000_000),
+    # Decision 2 (user): open sign-up, each user gets 3 messages a day for now.
+    # Raise USER_DAILY_REQUEST_LIMIT later. Admins have no limits at all
+    # (see is_unlimited), so there is no admin entry.
+    "user": (3, 200_000),
 }
+
+
+def is_unlimited(user: dict) -> bool:
+    return user.get("role") == "admin"
 
 QUOTA_MESSAGES = {
     "registration_rate_limit": "Too many accounts were created recently. Please try again later.",
@@ -39,16 +43,18 @@ def _env_int(name: str, default: int) -> int:
 
 
 def default_limits(role: str) -> tuple:
-    request_default, token_default = _ROLE_DEFAULTS.get(role, _ROLE_DEFAULTS["user"])
-    prefix = "ADMIN" if role == "admin" else "USER"
+    request_default, token_default = _ROLE_DEFAULTS["user"]
     return (
-        _env_int(f"{prefix}_DAILY_REQUEST_LIMIT", request_default),
-        _env_int(f"{prefix}_DAILY_TOKEN_LIMIT", token_default),
+        _env_int("USER_DAILY_REQUEST_LIMIT", request_default),
+        _env_int("USER_DAILY_TOKEN_LIMIT", token_default),
     )
 
 
 def limits_for(user: dict) -> tuple:
-    """A user's own limits win; NULL columns fall back to the role default."""
+    """A user's own limits win; NULL columns fall back to the role default.
+    Admins have no limits (None, None)."""
+    if is_unlimited(user):
+        return (None, None)
     request_default, token_default = default_limits(user.get("role", "user"))
     request_limit = user.get("daily_request_limit")
     token_limit = user.get("daily_token_limit")
@@ -78,8 +84,8 @@ def daily_user_cap() -> int:
     """How many DIFFERENT users may be served per day. Someone already served
     today is never cut off by this (their own limits still apply); only a
     new user is refused once the cap is reached. Admins are exempt. With the
-    default 2 messages per user, 20 users = 40 requests, inside the global
-    cap of 50. 0 disables."""
+    default 3 messages per user, 20 users = 60 requests, above the global
+    cap of 50 (raise one or lower the other if that matters). 0 disables."""
     return _env_int("DAILY_ACTIVE_USER_CAP", DEFAULT_DAILY_USER_CAP)
 
 
@@ -220,7 +226,9 @@ def get_active_users_today(conn) -> int:
 def check_quota(conn, user: dict, limiter: RateLimiter = None) -> None:
     """Raises QuotaExceeded if this user may not send another request now.
     Daily limits are checked before the rate limiter so that a refused
-    request never uses up a rate-limit slot."""
+    request never uses up a rate-limit slot. Admins skip every check."""
+    if is_unlimited(user):
+        return
     limiter = limiter or rate_limiter
     usage = get_usage_today(conn, user["user_id"])
     cap = global_daily_cap()

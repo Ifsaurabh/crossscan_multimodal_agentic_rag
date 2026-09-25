@@ -1,9 +1,14 @@
-name: Tests (push / PR)
+name: Tests and deploy (push / PR)
 
 # Fast feedback on every push and PR: unit tests (fully faked) + integration
 # tests (real SQL against a real Postgres+pgvector container, throwaway
-# schema, dropped after). No Neo4j, no Gemini calls here - see live-eval.yml
+# schema, dropped after). No Neo4j, no Gemini calls here - see live-and-eval.yml
 # for those.
+#
+# DEPLOY: a push to main that passes the tests is built and deployed to Cloud Run by the
+# `deploy` job below. The new revision first gets NO traffic and is health-checked; traffic
+# only moves to it if that check passes, so a broken build never replaces the running app.
+# One-time Google Cloud setup: .github/DEPLOY_SETUP.md
 
 on:
   push:
@@ -12,9 +17,18 @@ on:
     branches: [main, master]
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  # A newer push cancels an older PR run, but never a running deploy on main.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     services:
       postgres:
@@ -45,11 +59,108 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install dependencies (CPU-only torch first, because the default Linux wheel pulls several GB of CUDA)
+        run: |
+          pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       - name: Unit tests
         run: python -m pytest tests/unit -q
 
       - name: Integration tests (real Postgres, throwaway schema)
         run: python -m pytest tests/integration --run-integration -q
+
+  deploy:
+    # Only after every test above passed, only for main, never for a pull request.
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    # Optional manual approval: GitHub -> Settings -> Environments -> production -> Required reviewers.
+    environment: production
+    # Two deploys never run at once, and a running one is never cancelled half way.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write   # lets the job prove its identity to Google Cloud (no stored key)
+
+    env:
+      PROJECT_ID: sagar-crossscan
+      REGION: europe-west1
+      SERVICE: crossscan-multimodal-agentic-rag-git
+      IMAGE: europe-west1-docker.pkg.dev/sagar-crossscan/cloud-run-source-deploy/ifsaurabh-crossscan_multimodal_agentic_rag/crossscan-multimodal-agentic-rag-git
+      WORKLOAD_IDENTITY_PROVIDER: projects/807612796446/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+      DEPLOY_SERVICE_ACCOUNT: github-deployer@sagar-crossscan.iam.gserviceaccount.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (the image is several GB and Docker needs room to build it)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Sign in to Google Cloud (keyless)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Let Docker push to Artifact Registry
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          # Layer cache kept in the registry: the slow steps (packages, model download) are
+          # reused unless requirements.txt or the model names change.
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+      - name: Deploy the new revision WITHOUT traffic
+        run: |
+          gcloud run services update "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --image "$IMAGE:$GITHUB_SHA" \
+            --no-traffic --tag candidate \
+            --update-labels "managed-by=github-actions,commit-sha=$GITHUB_SHA" \
+            --quiet
+
+      - name: Health-check the new revision before it gets any traffic
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format=json \
+                | jq -r '.status.traffic[] | select(.tag=="candidate") | .url')
+          echo "Candidate revision: $URL"
+          # Streamlit answers this endpoint as soon as the server is up; retry while the container starts.
+          curl --fail --silent --show-error --retry 12 --retry-delay 10 --retry-all-errors \
+               --max-time 30 "$URL/_stcore/health"
+          echo
+
+      - name: Send all traffic to the new revision
+        run: |
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --to-latest --quiet
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --remove-tags candidate --quiet
+          {
+            echo "### Deployed"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Service: \`$SERVICE\` ($REGION)"
+            echo "- To roll back: Cloud Run -> $SERVICE -> Revisions -> pick the previous one -> Manage traffic"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: If anything above failed, the running app was NOT changed
+        if: failure()
+        run: |
+          echo "The deploy failed before traffic was moved, so users are still on the previous revision."
+          gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --remove-tags candidate --quiet || true

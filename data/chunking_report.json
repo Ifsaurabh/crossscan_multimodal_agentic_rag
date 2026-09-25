@@ -4,7 +4,7 @@
     {
       "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
       "parent_count": 14,
-      "child_count": 32,
+      "child_count": 33,
       "parent_tokens": {
         "min": 29,
         "max": 1568,
@@ -12,10 +12,10 @@
       },
       "child_tokens": {
         "min": 29,
-        "max": 409,
-        "avg": 266.2
+        "max": 401,
+        "avg": 259.4
       },
-      "latency_seconds": 0.249
+      "latency_seconds": 0.125
     },
     {
       "source_pdf": "2404.03936v2.pdf",
@@ -29,9 +29,9 @@
       "child_tokens": {
         "min": 48,
         "max": 400,
-        "avg": 280.8
+        "avg": 280.7
       },
-      "latency_seconds": 0.173
+      "latency_seconds": 0.29
     },
     {
       "source_pdf": "2510.26923v1.pdf",
@@ -47,7 +47,7 @@
         "max": 397,
         "avg": 238.4
       },
-      "latency_seconds": 0.013
+      "latency_seconds": 0.037
     },
     {
       "source_pdf": "2602.10481v1.pdf",
@@ -60,10 +60,10 @@
       },
       "child_tokens": {
         "min": 5,
-        "max": 394,
-        "avg": 179.1
+        "max": 377,
+        "avg": 178.9
       },
-      "latency_seconds": 0.022
+      "latency_seconds": 0.096
     },
     {
       "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
@@ -76,10 +76,10 @@
       },
       "child_tokens": {
         "min": 1,
-        "max": 426,
-        "avg": 265.3
+        "max": 399,
+        "avg": 263.5
       },
-      "latency_seconds": 0.101
+      "latency_seconds": 0.149
     },
     {
       "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
@@ -92,15 +92,15 @@
       },
       "child_tokens": {
         "min": 60,
-        "max": 400,
-        "avg": 264.0
+        "max": 399,
+        "avg": 263.3
       },
-      "latency_seconds": 0.079
+      "latency_seconds": 0.073
     },
     {
       "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
       "parent_count": 25,
-      "child_count": 54,
+      "child_count": 55,
       "parent_tokens": {
         "min": 7,
         "max": 1735,
@@ -108,10 +108,10 @@
       },
       "child_tokens": {
         "min": 7,
-        "max": 405,
-        "avg": 257.6
+        "max": 398,
+        "avg": 254.4
       },
-      "latency_seconds": 0.046
+      "latency_seconds": 0.1
     },
     {
       "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
@@ -124,10 +124,10 @@
       },
       "child_tokens": {
         "min": 6,
-        "max": 403,
-        "avg": 200.5
+        "max": 398,
+        "avg": 201.9
       },
-      "latency_seconds": 0.036
+      "latency_seconds": 0.089
     },
     {
       "source_pdf": "fmed-12-1567119.pdf",
@@ -140,10 +140,10 @@
       },
       "child_tokens": {
         "min": 15,
-        "max": 403,
-        "avg": 211.2
+        "max": 400,
+        "avg": 211.7
       },
-      "latency_seconds": 0.038
+      "latency_seconds": 0.075
     },
     {
       "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
@@ -156,10 +156,10 @@
       },
       "child_tokens": {
         "min": 1,
-        "max": 400,
-        "avg": 252.7
+        "max": 399,
+        "avg": 252.6
       },
-      "latency_seconds": 0.023
+      "latency_seconds": 0.055
     },
     {
       "source_pdf": "LungPaper.pdf",
@@ -175,23 +175,23 @@
         "max": 389,
         "avg": 211.8
       },
-      "latency_seconds": 0.02
+      "latency_seconds": 0.069
     },
     {
       "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
       "parent_count": 22,
-      "child_count": 67,
+      "child_count": 70,
       "parent_tokens": {
         "min": 1,
-        "max": 1798,
-        "avg": 807.7
+        "max": 1752,
+        "avg": 810.3
       },
       "child_tokens": {
         "min": 1,
         "max": 400,
-        "avg": 282.7
+        "avg": 275.0
       },
-      "latency_seconds": 0.119
+      "latency_seconds": 0.136
     }
   ]
 }

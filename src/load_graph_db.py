@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
 
-from graph_db import get_driver
+from graph_db import close_driver, get_driver
 
 DOMAIN_MAP_PATH = Path(__file__).parent.parent / "data" / "domain_classification.json"
 ENTITIES_PATH = Path(__file__).parent.parent / "data" / "entities.json"
 CHUNKS_DIR = Path(__file__).parent.parent / "data" / "chunks"
 IMAGES_METADATA_PATH = Path(__file__).parent.parent / "data" / "images" / "metadata.json"
+GUARDED_DIR = Path(__file__).parent.parent / "data" / "guarded"
 
 
 def load_papers(session, domain_map):
@@ -19,7 +20,7 @@ def load_papers(session, domain_map):
 
 
 def load_entities(session, entities):
-    method_count = dataset_count = metric_count = 0
+    method_count = dataset_count = metric_count = baseline_count = 0
 
     for source_pdf, data in entities.items():
         verified = data["verified"]
@@ -54,7 +55,17 @@ def load_entities(session, entities):
             )
             metric_count += 1
 
-    return method_count, dataset_count, metric_count
+        for baseline in verified.get("baselines", []):
+            session.run(
+                """MERGE (b:Baseline {name: $name})
+                   WITH b
+                   MATCH (p:Paper {source_pdf: $source_pdf})
+                   MERGE (p)-[:COMPARED_TO]->(b)""",
+                name=baseline, source_pdf=source_pdf,
+            )
+            baseline_count += 1
+
+    return method_count, dataset_count, metric_count, baseline_count
 
 
 def load_sections(session):
@@ -125,8 +136,57 @@ def load_images(session, all_sections):
     return image_count, linked_count
 
 
+def load_tables(session, all_sections):
+    """Tables have no ID from earlier stages (unlike sections/images) - assign
+    one here, scoped to the document, stable across re-runs since a document's
+    table order doesn't change between runs of the same data."""
+    table_count = 0
+    linked_count = 0
+
+    sections_by_pdf = {}
+    for s in all_sections:
+        sections_by_pdf.setdefault(s["source_pdf"], []).append(s)
+
+    for guarded_path in sorted(GUARDED_DIR.glob("*.json")):
+        doc = json.loads(guarded_path.read_text(encoding="utf-8"))
+        source_pdf = doc["source_pdf"]
+
+        for i, table in enumerate(doc.get("tables", []), start=1):
+            table_id = f"{source_pdf}_table{i}"
+            page = table["page"]
+
+            # Table nodes store their own text (unlike Section/Image, which
+            # point back to Postgres/disk) - tables have no other home.
+            session.run(
+                """MERGE (t:Table {table_id: $table_id})
+                   SET t.text = $text, t.page = $page
+                   WITH t
+                   MATCH (p:Paper {source_pdf: $source_pdf})
+                   MERGE (t)-[:APPEARS_IN]->(p)""",
+                table_id=table_id, text=table["text"], page=page, source_pdf=source_pdf,
+            )
+            table_count += 1
+
+            matching_section = next(
+                (s for s in sections_by_pdf.get(source_pdf, [])
+                 if s["page_start"] is not None and page is not None
+                 and s["page_start"] <= page <= s["page_end"]),
+                None,
+            )
+            if matching_section:
+                session.run(
+                    """MATCH (t:Table {table_id: $table_id})
+                       MATCH (s:Section {chunk_id: $chunk_id})
+                       MERGE (t)-[:NEAR_SECTION]->(s)""",
+                    table_id=table_id, chunk_id=matching_section["chunk_id"],
+                )
+                linked_count += 1
+
+    return table_count, linked_count
+
+
 def load_graph_db():
-    domain_map = json.loads(DOMAIN_MAP_PATH.read_text(encoding="utf-8"))
+    domain_map = {d["source_pdf"]: d["domain"] for d in json.loads(DOMAIN_MAP_PATH.read_text(encoding="utf-8"))}
     entities = json.loads(ENTITIES_PATH.read_text(encoding="utf-8"))
 
     driver = get_driver()
@@ -134,16 +194,20 @@ def load_graph_db():
         paper_count = load_papers(session, domain_map)
         print(f"Loaded {paper_count} Paper nodes")
 
-        method_count, dataset_count, metric_count = load_entities(session, entities)
-        print(f"Loaded {method_count} USES_METHOD, {dataset_count} USES_DATASET, {metric_count} EVALUATED_WITH relationships")
+        method_count, dataset_count, metric_count, baseline_count = load_entities(session, entities)
+        print(f"Loaded {method_count} USES_METHOD, {dataset_count} USES_DATASET, "
+              f"{metric_count} EVALUATED_WITH, {baseline_count} COMPARED_TO relationships")
 
         section_count, all_sections = load_sections(session)
         print(f"Loaded {section_count} Section nodes")
 
-        image_count, linked_count = load_images(session, all_sections)
-        print(f"Loaded {image_count} Image nodes, {linked_count} linked to a Section via page overlap")
+        image_count, image_linked_count = load_images(session, all_sections)
+        print(f"Loaded {image_count} Image nodes, {image_linked_count} linked to a Section via page overlap")
 
-    driver.close()
+        table_count, table_linked_count = load_tables(session, all_sections)
+        print(f"Loaded {table_count} Table nodes, {table_linked_count} linked to a Section via page overlap")
+
+    close_driver()
     print("\nGraph load complete.")
 
 

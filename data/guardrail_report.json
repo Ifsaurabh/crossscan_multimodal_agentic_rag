@@ -2,63 +2,182 @@
   "documents": [
     {
       "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+      "domain": "lung-nodule-detection",
       "pii_redactions": 2,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "\u00a9 2025 The Authors. Published by Elsevier B.V. \u00a9 \u00a9 2025 The Authors. Published by Elsevier B.V.",
+          "domain": "lung-nodule-detection",
+          "count": 2
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "2404.03936v2.pdf",
+      "domain": "satellite-image-analysis",
       "pii_redactions": 3,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "AUTHOR INFORMATION",
+          "domain": "satellite-image-analysis",
+          "count": 3
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "2510.26923v1.pdf",
+      "domain": "lung-nodule-detection",
       "pii_redactions": 0,
-      "sections_dropped": []
+      "pii_locations": [],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "2602.10481v1.pdf",
+      "domain": "ai-security",
       "pii_redactions": 2,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "Protecting Context and Prompts: Deterministic Security for Non-Deterministic AI",
+          "domain": "ai-security",
+          "count": 1
+        },
+        {
+          "where": "1 Introduction",
+          "domain": "ai-security",
+          "count": 1
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "domain": "lung-cancer-diagnosis",
       "pii_redactions": 4,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "AI-Powered Lung Cancer Detection: Assessing VGG16 and CNN Architectures for CT Scan Image Classification",
+          "domain": "lung-cancer-diagnosis",
+          "count": 4
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
+      "domain": "land-cover-classification",
       "pii_redactions": 2,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "Introduction",
+          "domain": "land-cover-classification",
+          "count": 2
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
+      "domain": "lung-cancer-classification",
       "pii_redactions": 1,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": null,
+          "domain": "lung-cancer-classification",
+          "count": 1
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
+      "domain": "lung-cancer-diagnosis",
       "pii_redactions": 3,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "1. Introduction",
+          "domain": "lung-cancer-diagnosis",
+          "count": 3
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "fmed-12-1567119.pdf",
+      "domain": "lung-cancer-detection",
       "pii_redactions": 1,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "REVIEWED BY",
+          "domain": "lung-cancer-detection",
+          "count": 1
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
+      "domain": "land-cover-classification",
       "pii_redactions": 5,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery",
+          "domain": "land-cover-classification",
+          "count": 5
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "LungPaper.pdf",
+      "domain": "lung-tumor-segmentation",
       "pii_redactions": 1,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "1 Introduction",
+          "domain": "lung-tumor-segmentation",
+          "count": 1
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     },
     {
       "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
+      "domain": "satellite-remote-sensing",
       "pii_redactions": 4,
-      "sections_dropped": []
+      "pii_locations": [
+        {
+          "where": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu, Bhutan",
+          "domain": "satellite-remote-sensing",
+          "count": 4
+        }
+      ],
+      "sections_dropped": [],
+      "tables_dropped": [],
+      "injection_flags": []
     }
   ]
 }

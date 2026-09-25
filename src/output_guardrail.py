@@ -1,5 +1,24 @@
 import re
 
+# Same pattern as query_guardrail.py/ingestion_guardrails.py - last checkpoint
+# before the answer reaches the user, so PII gets REDACTED here (not just
+# flagged): closes the general-knowledge-answer path, which never goes
+# through document/query redaction since it involves no retrieved content.
+EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+
+# Credential/secret shapes - matches actual key formats, not bare words like
+# "password" (a security paper discussing password policy in prose is not a
+# leak; the AI-security paper in this corpus already contains realistic
+# example payloads, so an actual key-shaped string appearing is plausible).
+CREDENTIAL_PATTERNS = [
+    r"\bsk-[A-Za-z0-9]{20,}\b",                                    # OpenAI-style key
+    r"\bAKIA[0-9A-Z]{16}\b",                                       # AWS access key ID
+    r"(?:api[_-]?key|secret|token)\s*[:=]\s*['\"]?[A-Za-z0-9\-_]{16,}['\"]?",
+    r"password\s*[:=]\s*['\"]?\S{6,}['\"]?",                       # password=... assignment, not bare mentions
+    r"Bearer\s+[A-Za-z0-9\-_.]{20,}",                              # Bearer token
+]
+CREDENTIAL_REGEX = re.compile("|".join(CREDENTIAL_PATTERNS), re.IGNORECASE)
+
 # Citation format requested by agent_quality_generate.py's prompt:
 # "[source_pdf, p.4]". Models drift from it, and every format that is NOT
 # recognised here silently escapes verification, so the pattern accepts what
@@ -72,9 +91,12 @@ def verify_citations(answer: str, retrieved_chunks: list):
 
 def check_output(answer: str, retrieved_chunks: list) -> dict:
     """Stage 10 Output Guardrail. Deterministic, no LLM call."""
-    verified, unverified = verify_citations(answer, retrieved_chunks)
-    injection_leak_detected = bool(INJECTION_LEAK_REGEX.search(answer))
-    clinical_overstatement_detected = bool(CLINICAL_OVERSTATEMENT_REGEX.search(answer))
+    cleaned_answer, pii_redactions = EMAIL_PATTERN.subn("[REDACTED_EMAIL]", answer)
+    cleaned_answer, credential_redactions = CREDENTIAL_REGEX.subn("[REDACTED_CREDENTIAL]", cleaned_answer)
+
+    verified, unverified = verify_citations(cleaned_answer, retrieved_chunks)
+    injection_leak_detected = bool(INJECTION_LEAK_REGEX.search(cleaned_answer))
+    clinical_overstatement_detected = bool(CLINICAL_OVERSTATEMENT_REGEX.search(cleaned_answer))
 
     flags = []
     if unverified:
@@ -83,8 +105,15 @@ def check_output(answer: str, retrieved_chunks: list) -> dict:
         flags.append("possible_injection_leak")
     if clinical_overstatement_detected:
         flags.append("clinical_overstatement")
+    if pii_redactions:
+        flags.append("pii_redacted")
+    if credential_redactions:
+        flags.append("credential_redacted")
 
     return {
+        "cleaned_answer": cleaned_answer,
+        "pii_redactions": pii_redactions,
+        "credential_redactions": credential_redactions,
         "verified_citations": verified,
         "unverified_citations": unverified,
         "injection_leak_detected": injection_leak_detected,
