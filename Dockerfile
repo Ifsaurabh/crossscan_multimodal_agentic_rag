@@ -3,7 +3,7 @@
 # health-checked -> traffic moves to it. Postgres (Neon) and Neo4j (Aura) are external managed
 # services: set DATABASE_URL, NEO4J_*, GEMINI_API_KEY and the ADMIN_* / limit settings as env
 # vars/secrets on the Cloud Run service (same names as the local .env).
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
