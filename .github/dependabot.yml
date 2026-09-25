@@ -15,3 +15,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # The base image in the Dockerfile (python:3.11-slim): security patches arrive as a PR, and the
+  # Docker image check workflow proves the new base still builds before it is merged.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

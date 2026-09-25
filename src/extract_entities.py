@@ -38,22 +38,24 @@ def get_abstract_and_conclusion(sections):
 
 
 def build_prompt(text):
-    return f"""Extract entities from this research paper text, categorized into three types:
+    return f"""Extract entities from this research paper text, categorized into four types:
 - METHODS: algorithms, models, or techniques used (e.g. CNN, YOLOv11, Discrete Wavelet Transform)
 - DATASETS: named datasets used (e.g. LIDC-IDRI, Sentinel-2)
 - METRICS: named evaluation metrics (e.g. accuracy, dice coefficient)
+- BASELINES: named prior methods/models this paper compares its results against (e.g. ResNet-50, "the method of Smith et al.")
 
 CRITICAL RULES:
 - Only extract entities that are EXPLICITLY named in the text below, word for word.
 - Do NOT infer, guess, or complete unstated specifics (e.g. if the text says "the other four YOLO versions" without naming them, do NOT invent version numbers).
 - If a category has no explicitly named entities, return an empty list for it.
 - Do NOT include entities from your general knowledge that are not literally present in this text.
+- A method the paper itself proposes/uses is METHODS, not BASELINES - BASELINES is only for prior work it compares against.
 
 Text:
 {text}
 
 Respond ONLY as JSON in this exact format, with no other text:
-{{"methods": [...], "datasets": [...], "metrics": [...]}}"""
+{{"methods": [...], "datasets": [...], "metrics": [...], "baselines": [...]}}"""
 
 
 def query_gemini(client, prompt: str, max_retries=4) -> str:
@@ -92,7 +94,7 @@ def parse_entities(raw_response: str):
 
 def verify_entities(entities, source_text):
     """Flag entities whose exact text does not appear in the source, so
-    fabricated/inferred entities (the failure mode found with Qwen) can be
+    fabricated/inferred entities can be
     caught and reviewed instead of silently trusted."""
     source_lower = source_text.lower()
     verified = {}
@@ -184,9 +186,6 @@ def extract_entities():
         # Save incrementally so a later failure doesn't lose completed work.
         OUTPUT_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
         REPORT_PATH.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-    OUTPUT_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    REPORT_PATH.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     print(f"\nEntities saved to {OUTPUT_PATH}")
     print(f"Report saved to {REPORT_PATH}")

@@ -25,56 +25,15 @@ def count_tokens(text: str) -> int:
     return len(ENCODING.encode(text))
 
 
-def split_oversized_unit(text: str, max_tokens: int, overlap_tokens: int):
-    """Fallback for a single paragraph/unit that exceeds the cap on its own.
-    Uses RecursiveCharacterTextSplitter (paragraph -> sentence -> word -> char),
-    token-aware via tiktoken, instead of the custom parent-child grouping logic."""
+def split_text(text: str, max_tokens: int, overlap_tokens: int) -> list:
+    """Token-aware split via LangChain's RecursiveCharacterTextSplitter
+    (paragraph -> sentence -> word -> char, whichever level fits)."""
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
         encoding_name=TOKENIZER_ENCODING,
         chunk_size=max_tokens,
         chunk_overlap=overlap_tokens,
     )
     return splitter.split_text(text)
-
-
-def group_units(units, max_tokens: int, overlap_tokens: int):
-    """Greedily group text units (paragraphs or sentences) into chunks under max_tokens,
-    carrying forward trailing units worth ~overlap_tokens into the next chunk."""
-    unit_tokens = [(u, count_tokens(u)) for u in units]
-
-    chunks = []
-    current = []
-    current_tokens = 0
-
-    for unit, tokens in unit_tokens:
-        if tokens > max_tokens:
-            if current:
-                chunks.append(current)
-                current = []
-                current_tokens = 0
-            for sub in split_oversized_unit(unit, max_tokens, overlap_tokens):
-                chunks.append([(sub, count_tokens(sub))])
-            continue
-
-        if current_tokens + tokens > max_tokens and current:
-            chunks.append(current)
-            overlap_units = []
-            overlap_count = 0
-            for u, t in reversed(current):
-                if overlap_count + t > overlap_tokens:
-                    break
-                overlap_units.insert(0, (u, t))
-                overlap_count += t
-            current = overlap_units
-            current_tokens = overlap_count
-
-        current.append((unit, tokens))
-        current_tokens += tokens
-
-    if current:
-        chunks.append(current)
-
-    return ["\n\n".join(u for u, _ in c) for c in chunks]
 
 
 def chunk_documents():
@@ -99,11 +58,10 @@ def chunk_documents():
         child_counter = 0
 
         for section in doc["sections"]:
-            paragraphs = [p.strip() for p in section["text"].split("\n\n") if p.strip()]
-            if not paragraphs:
+            if not section["text"].strip():
                 continue
 
-            parent_texts = group_units(paragraphs, PARENT_MAX_TOKENS, PARENT_OVERLAP_TOKENS)
+            parent_texts = split_text(section["text"], PARENT_MAX_TOKENS, PARENT_OVERLAP_TOKENS)
 
             for parent_text in parent_texts:
                 parent_counter += 1
@@ -111,8 +69,7 @@ def chunk_documents():
                 parent_tokens = count_tokens(parent_text)
                 parent_token_counts.append(parent_tokens)
 
-                parent_paragraphs = [p.strip() for p in parent_text.split("\n\n") if p.strip()]
-                child_texts = group_units(parent_paragraphs, CHILD_MAX_TOKENS, CHILD_OVERLAP_TOKENS)
+                child_texts = split_text(parent_text, CHILD_MAX_TOKENS, CHILD_OVERLAP_TOKENS)
 
                 children = []
                 for child_text in child_texts:

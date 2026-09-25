@@ -46,21 +46,35 @@ def test_evaluate_none_limit_means_unlimited():
     assert quotas.evaluate(usage, (None, None), 0, 0) is None
 
 
-def test_limits_for_uses_role_defaults_then_user_overrides(monkeypatch):
+def test_limits_for_uses_the_user_default_then_user_overrides(monkeypatch):
     clean_env(monkeypatch)
-    assert quotas.limits_for(make_user("user")) == (2, 200_000)  # Decision 2: 2 messages/day for users
-    assert quotas.limits_for(make_user("admin")) == (500, 5_000_000)
+    assert quotas.limits_for(make_user("user")) == (3, 200_000)  # 3 messages/day for every signed-in user
     assert quotas.limits_for(make_user("user", request_limit=5)) == (5, 200_000)
     assert quotas.limits_for(make_user("user", request_limit=0, token_limit=7)) == (0, 7)
 
 
-def test_env_overrides_role_defaults(monkeypatch):
+def test_env_overrides_the_user_default(monkeypatch):
     clean_env(monkeypatch)
-    monkeypatch.setenv("USER_DAILY_REQUEST_LIMIT", "3")
-    monkeypatch.setenv("ADMIN_DAILY_TOKEN_LIMIT", "99")
+    monkeypatch.setenv("USER_DAILY_REQUEST_LIMIT", "7")
+    monkeypatch.setenv("USER_DAILY_TOKEN_LIMIT", "99")
 
-    assert quotas.default_limits("user")[0] == 3
-    assert quotas.default_limits("admin")[1] == 99
+    assert quotas.default_limits("user") == (7, 99)
+    assert quotas.limits_for(make_user("user")) == (7, 99)
+
+
+def test_admins_have_no_limits_at_all(monkeypatch):
+    clean_env(monkeypatch)
+    assert quotas.is_unlimited(make_user("admin")) is True
+    assert quotas.is_unlimited(make_user("user")) is False
+    assert quotas.limits_for(make_user("admin")) == (None, None)
+
+
+def test_an_admins_limits_ignore_per_user_overrides_and_old_admin_settings(monkeypatch):
+    clean_env(monkeypatch)
+    monkeypatch.setenv("ADMIN_DAILY_REQUEST_LIMIT", "1")  # the old setting no longer exists
+    monkeypatch.setenv("ADMIN_DAILY_TOKEN_LIMIT", "1")
+
+    assert quotas.limits_for(make_user("admin", request_limit=5, token_limit=5)) == (None, None)
 
 
 def test_rate_limiter_allows_up_to_limit_then_refuses_with_retry_after():
@@ -117,7 +131,7 @@ def test_check_quota_refuses_over_daily_limit_without_using_a_rate_slot(monkeypa
     limiter = quotas.RateLimiter(limit=1)
 
     with pytest.raises(quotas.QuotaExceeded) as excinfo:
-        quotas.check_quota(_quota_conn(requests=2), make_user(), limiter=limiter)
+        quotas.check_quota(_quota_conn(requests=3), make_user(), limiter=limiter)
 
     assert excinfo.value.reason == "daily_request_limit"
     assert limiter.allow("u1")[0] is True  # slot was not consumed by the refusal
@@ -297,21 +311,31 @@ def test_global_total_is_not_queried_when_cap_is_explicitly_disabled(monkeypatch
     assert conn.find("SUM(requests)") == []
 
 
-def test_a_regular_user_gets_a_first_question_and_one_follow_up_per_day(monkeypatch):
+def test_a_regular_user_gets_three_messages_per_day(monkeypatch):
     clean_env(monkeypatch)
     user = make_user()
 
-    quotas.check_quota(_quota_conn(requests=0), user, limiter=quotas.RateLimiter(limit=5))  # 1st question
-    quotas.check_quota(_quota_conn(requests=1), user, limiter=quotas.RateLimiter(limit=5))  # follow-up
+    for already_used in (0, 1, 2):  # the 1st, 2nd and 3rd message are allowed
+        quotas.check_quota(_quota_conn(requests=already_used), user, limiter=quotas.RateLimiter(limit=5))
     with pytest.raises(quotas.QuotaExceeded) as excinfo:
-        quotas.check_quota(_quota_conn(requests=2), user, limiter=quotas.RateLimiter(limit=5))  # third
+        quotas.check_quota(_quota_conn(requests=3), user, limiter=quotas.RateLimiter(limit=5))  # the 4th
 
     assert excinfo.value.reason == "daily_request_limit"
 
 
-def test_admins_are_not_held_to_the_two_message_limit(monkeypatch):
+def test_an_admin_skips_every_check_and_never_touches_the_database(monkeypatch):
     clean_env(monkeypatch)
-    quotas.check_quota(_quota_conn(requests=50), make_user("admin"), limiter=quotas.RateLimiter(limit=5))
+    monkeypatch.setenv("GLOBAL_DAILY_REQUEST_CAP", "5")
+    monkeypatch.setenv("DAILY_ACTIVE_USER_CAP", "1")
+    limiter = quotas.RateLimiter(limit=1)
+    conn = _quota_conn(requests=10**6, prompt=10**9, global_requests=999, active_users=999)
+    admin = make_user("admin")
+
+    for _ in range(5):  # far over the daily, global, user-cap and per-minute limits
+        quotas.check_quota(conn, admin, limiter=limiter)
+
+    assert conn.executed == []  # not even a usage lookup
+    assert limiter.allow("u1")[0] is True  # and no rate-limit slot was used
 
 
 def test_registration_is_throttled_service_wide():
@@ -353,7 +377,8 @@ def test_remaining_reports_used_limit_and_left(monkeypatch):
     result = quotas.remaining(conn, make_user())
 
     assert result["requests_used"] == 1
-    assert result["requests_left"] == 1
+    assert result["requests_limit"] == 3
+    assert result["requests_left"] == 2
     assert result["tokens_used"] == 1500
     assert result["tokens_left"] == 200_000 - 1500
 
@@ -362,3 +387,15 @@ def test_remaining_never_goes_negative(monkeypatch):
     clean_env(monkeypatch)
     conn = _quota_conn(requests=99)
     assert quotas.remaining(conn, make_user())["requests_left"] == 0
+
+
+def test_remaining_reports_no_limits_for_an_admin(monkeypatch):
+    clean_env(monkeypatch)
+    conn = _quota_conn(requests=42, prompt=1000, output=500)
+
+    result = quotas.remaining(conn, make_user("admin"))
+
+    assert result["requests_used"] == 42
+    assert result["tokens_used"] == 1500
+    assert result["requests_limit"] is None and result["requests_left"] is None
+    assert result["tokens_limit"] is None and result["tokens_left"] is None

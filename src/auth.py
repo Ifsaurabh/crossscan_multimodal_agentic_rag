@@ -259,6 +259,26 @@ def set_password(conn, username: str, new_password: str) -> bool:
     return True
 
 
+def ensure_admin_from_env(conn) -> None:
+    """Makes the ADMIN_USERNAME / ADMIN_PASSWORD account from .env match .env:
+    created if missing; otherwise forced to role admin, active, and the
+    password re-synced (only rewritten when it no longer matches, and
+    existing logins are revoked then). Does nothing if either is unset."""
+    username = os.environ.get("ADMIN_USERNAME", "")
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    if not username or not password:
+        return
+    row = conn.execute(
+        f"SELECT password_hash FROM {SCHEMA_NAME}.users WHERE username = %s", (username,),
+    ).fetchone()
+    if row is None:
+        create_user(conn, username, password, role="admin")
+        return
+    update_user(conn, username, role="admin", is_active=True)
+    if not verify_password(password, row[0]):
+        set_password(conn, username, password)
+
+
 def is_admin(user: dict) -> bool:
     return bool(user) and user.get("role") == "admin"
 

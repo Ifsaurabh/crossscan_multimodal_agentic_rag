@@ -6,14 +6,22 @@ from docling.document_converter import DocumentConverter
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 TEXT_DIR = Path(__file__).parent.parent / "data" / "text"
 
-TEXT_LABELS = {"text", "section_header", "footnote", "list_item", "caption", "title"}
+TEXT_LABELS = {"text", "section_header", "footnote", "list_item", 
+               "caption", "title", "table", "formula"}
 
 
 def extract_blocks(document):
     blocks = []
     for item, _ in document.iterate_items():
         label = getattr(item, "label", None)
-        text = getattr(item, "text", None)
+
+        if label == "table":
+            try:
+                text = item.export_to_dataframe(doc=document).to_string(index=False)
+            except Exception:
+                text = None
+        else:
+            text = getattr(item, "text", None)
 
         if label not in TEXT_LABELS or not text:
             continue

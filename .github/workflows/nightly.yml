@@ -10,9 +10,13 @@ on:
     - cron: "17 3 * * *"  # 03:17 UTC daily - avoid the top-of-hour rush other repos use
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   full-suite:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     services:
       postgres:
@@ -43,8 +47,10 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install dependencies (CPU-only torch first, because the default Linux wheel pulls several GB of CUDA)
+        run: |
+          pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       - name: Unit + integration tests
         run: |

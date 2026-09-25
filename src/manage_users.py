@@ -64,9 +64,11 @@ def main():
         elif args.command == "list-users":
             for user in auth.list_users(conn):
                 usage = quotas.remaining(conn, user)
+                request_limit = "unlimited" if usage["requests_limit"] is None else usage["requests_limit"]
+                token_limit = "unlimited" if usage["tokens_limit"] is None else usage["tokens_limit"]
                 print(
                     f"{user['username']:<20} {user['role']:<6} {'active' if user['is_active'] else 'DISABLED':<8} "
-                    f"requests {usage['requests_used']}/{usage['requests_limit']}  tokens {usage['tokens_used']}/{usage['tokens_limit']}"
+                    f"requests {usage['requests_used']}/{request_limit}  tokens {usage['tokens_used']}/{token_limit}"
                 )
 
         elif args.command == "set-limits":

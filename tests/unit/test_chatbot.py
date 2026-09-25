@@ -1,3 +1,5 @@
+import psycopg
+import psycopg_pool
 import pytest
 
 import chatbot
@@ -380,17 +382,174 @@ def test_short_conversations_are_not_summarised(monkeypatch):
     chatbot.handle_message(USER, "s1", "q", conn=FakeConn(), invoke=h.invoke(), summarize_fn=never)
 
 
-def test_connection_is_closed_only_when_chatbot_opened_it(monkeypatch):
+class FakePool:
+    """Stands in for db.connection(): a context manager that lends one FakeConn
+    and records whether it was borrowed and how the borrow ended."""
+
+    def __init__(self):
+        self.conn = FakeConn()
+        self.entered = 0
+        self.exit_exceptions = []
+
+    def __call__(self):
+        return self
+
+    def __enter__(self):
+        self.entered += 1
+        return self.conn
+
+    def __exit__(self, exc_type, exc, tb):
+        self.exit_exceptions.append(exc_type)
+        return False
+
+
+def test_a_connection_is_borrowed_from_the_pool_only_when_the_caller_passed_none(monkeypatch):
     h = Harness(monkeypatch)
-    opened = FakeConn()
-    monkeypatch.setattr(chatbot, "get_connection", lambda: opened)
+    pool = FakePool()
+    monkeypatch.setattr(chatbot, "connection", pool)
 
     chatbot.handle_message(USER, None, "q", invoke=h.invoke())
-    assert opened.closed is True
+    assert pool.entered == 1
+    assert pool.exit_exceptions == [None]  # handed back cleanly
 
-    passed = FakeConn()
-    chatbot.handle_message(USER, None, "q", conn=passed, invoke=h.invoke())
-    assert passed.closed is False
+    chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke())
+    assert pool.entered == 1  # a connection the caller owns is never taken from the pool
+
+
+def test_the_borrowed_connection_is_returned_with_the_error_when_the_turn_fails(monkeypatch):
+    h = Harness(monkeypatch)
+    pool = FakePool()
+    monkeypatch.setattr(chatbot, "connection", pool)
+
+    with pytest.raises(RuntimeError):
+        chatbot.handle_message(USER, None, "q", invoke=h.invoke(raises=RuntimeError("boom")))
+
+    assert pool.entered == 1
+    assert pool.exit_exceptions == [RuntimeError]  # so the pool rolls the connection back
+
+
+def test_an_admin_is_never_refused_as_busy_and_takes_no_slot(monkeypatch):
+    h = Harness(monkeypatch)
+    limiter = chatbot.quotas.ConcurrencyLimiter(limit=1)
+    monkeypatch.setattr(chatbot.quotas, "concurrency_limiter", limiter)
+    assert limiter.acquire()  # a regular user is using the only slot
+    admin = {**USER, "role": "admin"}
+
+    result = chatbot.handle_message(admin, None, "q", conn=FakeConn(), invoke=h.invoke())
+
+    assert result["answer"]
+    assert limiter.active == 1  # still just the other user's slot
+
+
+# ---------- a database outage is a friendly "unavailable", never a crash ----------
+
+def db_error(message="connection lost"):
+    return psycopg.OperationalError(message)
+
+
+class UnreachablePool:
+    """db.connection() when Neon cannot be reached or every pooled connection is busy."""
+
+    def __call__(self):
+        return self
+
+    def __enter__(self):
+        raise psycopg_pool.PoolTimeout("couldn't get a connection after 15.00 sec")
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_a_database_failure_while_the_graph_runs_is_a_friendly_service_unavailable(monkeypatch):
+    h = Harness(monkeypatch)
+
+    with pytest.raises(chatbot.ServiceUnavailable) as excinfo:
+        chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke(raises=db_error()))
+
+    assert chatbot.DATABASE_DOWN_REASON in str(excinfo.value)
+    assert "did not count against your daily limit" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, psycopg.OperationalError)  # the real error stays attached for the logs
+    assert h.recorded == [] and h.added == []                            # not charged, nothing half saved
+
+
+def test_not_being_able_to_borrow_a_connection_is_a_friendly_service_unavailable(monkeypatch):
+    h = Harness(monkeypatch)
+    monkeypatch.setattr(chatbot, "connection", UnreachablePool())
+
+    with pytest.raises(chatbot.ServiceUnavailable):
+        chatbot.handle_message(USER, None, "q", invoke=h.invoke())  # no connection passed, so the pool is used
+
+    assert h.invocations == []  # the model was never called
+
+
+def test_a_pool_timeout_is_treated_like_any_database_outage(monkeypatch):
+    h = Harness(monkeypatch)
+
+    with pytest.raises(chatbot.ServiceUnavailable):
+        chatbot.handle_message(
+            USER, None, "q", conn=FakeConn(),
+            invoke=h.invoke(raises=psycopg_pool.PoolTimeout("all 8 connections are busy")),
+        )
+
+
+def test_a_database_failure_during_the_quota_check_is_a_friendly_service_unavailable(monkeypatch):
+    h = Harness(monkeypatch)
+
+    def broken_check(conn, user):
+        raise db_error("SSL connection has been closed unexpectedly")
+
+    monkeypatch.setattr(chatbot.quotas, "check_quota", broken_check)
+
+    with pytest.raises(chatbot.ServiceUnavailable):
+        chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke())
+
+    assert h.invocations == []
+
+
+def test_a_database_failure_while_saving_the_answer_is_a_friendly_service_unavailable(monkeypatch):
+    h = Harness(monkeypatch)
+
+    def broken_add(conn, uid, sid, role, content, metadata=None):
+        raise db_error()
+
+    monkeypatch.setattr(chatbot.chat_store, "add_message", broken_add)
+
+    with pytest.raises(chatbot.ServiceUnavailable):
+        chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke())
+
+
+def test_the_borrowed_connection_goes_back_to_the_pool_when_the_database_fails(monkeypatch):
+    h = Harness(monkeypatch)
+    pool = FakePool()
+    monkeypatch.setattr(chatbot, "connection", pool)
+
+    with pytest.raises(chatbot.ServiceUnavailable):
+        chatbot.handle_message(USER, None, "q", invoke=h.invoke(raises=db_error()))
+
+    assert pool.entered == 1 and pool.exit_exceptions == [chatbot.ServiceUnavailable]  # returned, with the error
+
+
+def test_errors_that_are_not_database_problems_are_not_hidden(monkeypatch):
+    h = Harness(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="a real bug"):
+        chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke(raises=RuntimeError("a real bug")))
+
+
+def test_a_quota_refusal_is_still_a_quota_refusal(monkeypatch):
+    h = Harness(monkeypatch)
+    h.quota_error = QuotaExceeded("daily_request_limit")
+
+    with pytest.raises(QuotaExceeded):
+        chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke())
+
+
+def test_a_healthy_database_still_answers_normally(monkeypatch):
+    h = Harness(monkeypatch)
+
+    result = chatbot.handle_message(USER, None, "q", conn=FakeConn(), invoke=h.invoke())
+
+    assert result["answer"] and h.recorded == [("u1", 100, 20)]
 
 
 def test_collect_sources_and_images_dedupe_and_skip_missing():

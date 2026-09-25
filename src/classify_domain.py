@@ -2,29 +2,25 @@ import json
 import re
 from pathlib import Path
 
-from sentence_transformers import SentenceTransformer, util
+from llm_connection import generate
 
-from embedding_config import TEXT_MODEL_NAME
-
-TEXT_EMBEDDINGS_DIR = Path(__file__).parent.parent / "data" / "embeddings" / "text"
 TEXT_DIR = Path(__file__).parent.parent / "data" / "text"
 OUTPUT_PATH = Path(__file__).parent.parent / "data" / "domain_classification.json"
-REPORT_PATH = Path(__file__).parent.parent / "data" / "domain_classification_report.json"
 
-SEED_DOMAIN_LABELS = {
-    "lung-cancer": "This document is about lung cancer and medical imaging, such as CT scans, tumor detection, and cancer diagnosis.",
-    "land-cover": "This document is about land cover and remote sensing, such as satellite imagery, vegetation classification, and environmental monitoring.",
-}
 
-NEW_DOMAIN_THRESHOLD = 0.60
+BATCH_SIZE = 100
+SNIPPET_CHARS = 800
 
-# Journal front-matter labels that sometimes get tagged as section headers
-# before the real title (e.g. "OPEN ACCESS", "REVIEWED BY") - skip these
-# when looking for the actual document title.
-FRONT_MATTER_LABELS = {
-    "open access", "reviewed by", "edited by", "citation", "copyright",
-    "correspondence", "*correspondence", "received", "accepted", "published",
-}
+DOMAIN_SYSTEM_INSTRUCTION = (
+    "You read raw text snippets taken from the start of research papers (may "
+    "include journal/page noise before the real content - ignore that, focus on "
+    "the actual paper). You will receive a numbered list of snippets. For each "
+    "one, extract the paper's real title (ignore journal names, publisher names, "
+    "page headers) and its research domain as a 2-4 word lowercase phrase (e.g. "
+    "\"lung cancer imaging\", \"land cover remote sensing\", \"ai security\"). "
+    "Respond with ONLY a JSON array of objects, same length and order as the "
+    "input list: [{\"title\": ..., \"domain\": ...}, ...]. No other text, no code fences."
+)
 
 
 def slugify_title(text: str) -> str:
@@ -32,70 +28,47 @@ def slugify_title(text: str) -> str:
     return "-".join(words[:5]) if words else "unknown-domain"
 
 
-def get_document_title(doc_path: Path) -> str:
-    text_path = TEXT_DIR / doc_path.name
-    if text_path.exists():
-        blocks = json.loads(text_path.read_text(encoding="utf-8"))["blocks"]
-        for b in blocks:
-            if b["label"] == "section_header" and b["text"].strip().lower() not in FRONT_MATTER_LABELS:
-                return b["text"]
-    return doc_path.stem
+def get_document_snippet(doc_path: Path, max_chars: int = SNIPPET_CHARS) -> str:
+    """Raw leading text (all block labels, in reading order) - classification input."""
+    blocks = json.loads(doc_path.read_text(encoding="utf-8"))["blocks"]
+    return " ".join(b["text"] for b in blocks)[:max_chars]
+
+
+def classify_snippets_batch(snippets: list) -> list:
+    numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(snippets))
+    result = generate(DOMAIN_SYSTEM_INSTRUCTION, numbered, tier="fast")
+
+    raw = result.text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    parsed = json.loads(raw)
+
+    if len(parsed) != len(snippets):
+        raise ValueError(f"Batch mismatch: {len(snippets)} snippets in, {len(parsed)} results back")
+
+    return [{"title": p["title"].strip(), "domain": slugify_title(p["domain"])} for p in parsed]
 
 
 def classify_domain():
-    print(f"Loading text embedding model: {TEXT_MODEL_NAME}")
-    model = SentenceTransformer(TEXT_MODEL_NAME)
-
-    domain_names = list(SEED_DOMAIN_LABELS.keys())
-    domain_embeddings = list(model.encode(list(SEED_DOMAIN_LABELS.values()), normalize_embeddings=True))
-
-    doc_files = sorted(TEXT_EMBEDDINGS_DIR.glob("*.json"))
+    doc_files = sorted(TEXT_DIR.glob("*.json"))
     print(f"Found {len(doc_files)} documents to classify")
 
-    results = {}
-    report = {"threshold": NEW_DOMAIN_THRESHOLD, "documents": []}
-
+    docs = []
     for doc_path in doc_files:
         doc = json.loads(doc_path.read_text(encoding="utf-8"))
-        records = doc["records"]
-        if not records:
-            continue
-
-        chunk_vectors = [r["embedding"] for r in records]
-        doc_vector = [sum(col) / len(col) for col in zip(*chunk_vectors)]
-
-        scores = util.cos_sim(doc_vector, domain_embeddings)[0]
-        best_index = int(scores.argmax())
-        best_score = float(scores[best_index])
-
-        if best_score >= NEW_DOMAIN_THRESHOLD:
-            domain = domain_names[best_index]
-            created_new = False
-        else:
-            title = get_document_title(doc_path)
-            domain = slugify_title(title)
-            domain_names.append(domain)
-            domain_embeddings.append(model.encode(title, normalize_embeddings=True))
-            created_new = True
-
-        results[doc["source_pdf"]] = domain
-        report["documents"].append({
+        docs.append({
             "source_pdf": doc["source_pdf"],
-            "domain": domain,
-            "best_seed_score": round(best_score, 4),
-            "created_new_domain": created_new,
+            "snippet": get_document_snippet(doc_path),
         })
 
-        flag = " [NEW DOMAIN]" if created_new else ""
-        print(f" - {doc['source_pdf']}: {domain} (score {round(best_score, 4)}){flag}")
+    results = []
+    for i in range(0, len(docs), BATCH_SIZE):
+        batch = docs[i:i + BATCH_SIZE]
+        classified = classify_snippets_batch([d["snippet"] for d in batch])
+        for d, c in zip(batch, classified):
+            results.append({"source_pdf": d["source_pdf"], "title": c["title"], "domain": c["domain"]})
+            print(f" - {d['source_pdf']}: {c['title']} -> {c['domain']}")
 
     OUTPUT_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    report["discovered_domains"] = domain_names
-    REPORT_PATH.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-    print(f"\nDomains: {domain_names}")
-    print(f"Domain mapping saved to {OUTPUT_PATH}")
-    print(f"Report saved to {REPORT_PATH}")
+    print(f"\nDomain mapping saved to {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

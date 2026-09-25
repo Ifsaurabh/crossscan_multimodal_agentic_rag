@@ -3,9 +3,10 @@
 Talks to the same service layer as the API (auth, quotas, chat store, memory),
 in one process - no separate API server needed for the UI.
 """
-import contextlib
+import logging
 from pathlib import Path
 
+import psycopg
 import streamlit as st
 
 import auth
@@ -15,9 +16,20 @@ import feedback
 import memory
 import online_report
 import quotas
-from db import get_connection
+from db import connection
 
 IMAGES_DIR = Path(__file__).resolve().parent.parent / "data" / "images"
+
+DATABASE_DOWN_MESSAGE = (
+    "The service is temporarily unavailable (the database could not be reached). "
+    "Please try again in a minute."
+)
+UNEXPECTED_ERROR_MESSAGE = (
+    "Something went wrong while answering. Please try again; if it keeps happening, tell the administrator."
+)
+
+PATTERN_GRAPH = "Agentic - Fixed Graph"
+PATTERN_TOOLS = "Agentic - Tool-Calling"
 
 st.set_page_config(page_title="CrossScan", layout="wide")
 
@@ -122,12 +134,33 @@ def sidebar(conn, user):
     st.sidebar.subheader(user["username"])
     st.sidebar.caption(f"Role: {user['role']}")
 
+    # Admin-only: the tool-calling demo has no guardrails, cache, memory or
+    # quota, so with open sign-up it would let any user bypass their daily
+    # limits and spend the shared Gemini quota. Non-admins always get the
+    # fixed graph.
+    if auth.is_admin(user):
+        st.sidebar.selectbox(
+            "Retrieval pattern",
+            [PATTERN_GRAPH, PATTERN_TOOLS],
+            key="retrieval_pattern",
+            help="Fixed Graph = the real pipeline (guardrails, cache, memory, quotas). "
+                 "Tool-Calling = demo only - no guardrails/cache/memory, not counted "
+                 "against quota, answers are not saved to chat history.",
+        )
+    else:
+        st.session_state["retrieval_pattern"] = PATTERN_GRAPH
+
     q = quotas.remaining(conn, user)
-    st.sidebar.caption(f"Messages today: {q['requests_used']} / {q['requests_limit']}")
-    st.sidebar.caption(f"Tokens today: {q['tokens_used']:,} / {q['tokens_limit']:,}")
+    if q["requests_limit"] is None:
+        st.sidebar.caption(f"Messages today: {q['requests_used']} (unlimited)")
+        st.sidebar.caption(f"Tokens today: {q['tokens_used']:,} (unlimited)")
+    else:
+        st.sidebar.caption(f"Messages today: {q['requests_used']} / {q['requests_limit']}")
+        st.sidebar.caption(f"Tokens today: {q['tokens_used']:,} / {q['tokens_limit']:,}")
 
     if st.sidebar.button("New chat", use_container_width=True):
         st.session_state["session_id"] = None
+        st.session_state.pop("demo_turns", None)
         st.rerun()
 
     st.sidebar.markdown("**Your chats**")
@@ -181,12 +214,35 @@ def chat_view(conn, user):
                 render_extras(message["metadata"])
                 render_feedback(conn, user, message["message_id"], ratings.get(message["message_id"]))
 
+    # Tool-calling demo turns live only in this browser session (not in the
+    # database), so they are re-rendered from session_state on every rerun.
+    for turn in st.session_state.get("demo_turns", []):
+        with st.chat_message("user"):
+            st.markdown(turn["question"])
+        with st.chat_message("assistant"):
+            st.caption(f"{PATTERN_TOOLS} - demo: no guardrails, cache, memory or quota; not saved to history")
+            st.markdown(turn["answer"])
+
     prompt = st.chat_input("Ask about the papers...")
     if not prompt:
         return
 
     with st.chat_message("user"):
         st.markdown(prompt)
+
+    # Checked again here (not only via the sidebar widget) so a non-admin can
+    # never reach the unguarded path.
+    if auth.is_admin(user) and st.session_state.get("retrieval_pattern") == PATTERN_TOOLS:
+        try:
+            with st.spinner("Agent is choosing tools..."):
+                import agentic_demo  # lazy: needs langchain-google-genai, only this path uses it
+
+                answer = agentic_demo.ask(prompt)
+        except Exception as e:
+            st.error(f"Tool-calling agent failed: {e}")
+            return
+        st.session_state.setdefault("demo_turns", []).append({"question": prompt, "answer": answer})
+        st.rerun()
 
     try:
         with st.spinner("Searching the papers..."):
@@ -204,6 +260,13 @@ def chat_view(conn, user):
     except ValueError as e:
         st.error(str(e))
         return
+    except Exception as e:  # anything unexpected: logged for the operator, the page stays usable
+        logging.exception("chat turn failed")
+        if auth.is_admin(user):
+            st.error(f"Unexpected error (details are shown to admins only): {type(e).__name__}: {e}")
+        else:
+            st.error(UNEXPECTED_ERROR_MESSAGE)
+        return
 
     if result["is_command"]:
         with st.chat_message("assistant"):
@@ -214,15 +277,28 @@ def chat_view(conn, user):
     st.rerun()
 
 
+@st.cache_resource
+def sync_admin():
+    with connection() as conn:
+        auth.ensure_admin_from_env(conn)
+
+
 def main():
-    with contextlib.closing(get_connection()) as conn:
-        user = auth.get_user_by_token(conn, st.session_state.get("token"))
-        if user is None:
-            st.session_state.pop("token", None)
-            login_view(conn)
-            return
-        sidebar(conn, user)
-        chat_view(conn, user)
+    try:
+        sync_admin()
+        with connection() as conn:
+            user = auth.get_user_by_token(conn, st.session_state.get("token"))
+            if user is None:
+                st.session_state.pop("token", None)
+                login_view(conn)
+                return
+            sidebar(conn, user)
+            chat_view(conn, user)
+    except psycopg.OperationalError:
+        # Postgres unreachable or the connection pool timed out, at login / sidebar time.
+        logging.exception("database unavailable while loading the page")
+        st.title("CrossScan")
+        st.warning(DATABASE_DOWN_MESSAGE)
 
 
 main()

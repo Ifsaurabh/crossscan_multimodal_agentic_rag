@@ -1,8 +1,8 @@
 {
   "embedding_version": "v2_bgebase_clipvitb32_structureaware",
   "model": "openai/clip-vit-base-patch32",
-  "images_embedded": 174,
+  "images_embedded": 182,
   "images_failed": 0,
   "failed_details": [],
-  "latency_seconds": 45.081
+  "latency_seconds": 68.619
 }

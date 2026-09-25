@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
+import langfuse_client
 import usage_tracker
 from retrieval_config import GEMINI_MODEL
 
@@ -36,7 +37,7 @@ load_dotenv()
 # Connection details per provider. API KEYS are never stored here: only the
 # NAME of the environment variable that holds each key.
 PROVIDERS = {
-    "gemini": {"api_key_env": "GEMINI_API_KEY"},
+    "gemini": {"api_key_env": "GEMINI_API_KEY", "timeout_seconds": 30},
     "anthropic": {"api_key_env": "ANTHROPIC_API_KEY", "timeout_seconds": 60, "max_output_tokens": 4096},
     "openai": {"api_key_env": "OPENAI_API_KEY", "timeout_seconds": 60, "max_output_tokens": 4096},
 }
@@ -273,8 +274,14 @@ def _call_gemini(config, model, system_instruction, user_content, client=None) -
 
     if client is None:
         from google import genai
+        from google.genai import types
 
-        client = _get_client("gemini", lambda: genai.Client(api_key=os.environ[config["api_key_env"]]))
+        # The SDK takes the timeout in milliseconds. Without it a hung call
+        # blocked for over a minute before the tier could fall back.
+        client = _get_client("gemini", lambda: genai.Client(
+            api_key=os.environ[config["api_key_env"]],
+            http_options=types.HttpOptions(timeout=config["timeout_seconds"] * 1000),
+        ))
 
     retries = config.get("max_retries", gemini_retry.DEFAULT_MAX_RETRIES)
     if system_instruction:
@@ -395,10 +402,29 @@ def generate(system_instruction: str, user_content: str, *, tier: str = None, ta
         config = {**PROVIDERS[provider], "max_retries": FAILOVER_RETRIES if fallback_ready else FULL_RETRIES}
 
         try:
-            result = _ADAPTERS[provider](
-                config, model, system_instruction, user_content,
-                client if provider == "gemini" else None,
-            )
+            # OLD VERSION (commented out, kept for reference): called the
+            # adapter directly. Langfuse's CallbackHandler traces the
+            # LangGraph node this runs inside, but since the adapter calls
+            # the Gemini SDK directly (not a LangChain chat model), the
+            # CallbackHandler has no visibility into the call itself - no
+            # model name, no token usage. Confirmed directly against the
+            # Langfuse API: every observation from a live run was type CHAIN,
+            # none was type GENERATION.
+            #
+            # result = _ADAPTERS[provider](
+            #     config, model, system_instruction, user_content,
+            #     client if provider == "gemini" else None,
+            # )
+
+            # NEW VERSION: wrap the same call in a Langfuse "generation" span
+            # so the model name and token usage actually show up in Langfuse,
+            # not just Postgres. No-op automatically when Langfuse is off.
+            with langfuse_client.generation_span(f"llm:{provider}:{model}", model, user_content) as gen:
+                result = _ADAPTERS[provider](
+                    config, model, system_instruction, user_content,
+                    client if provider == "gemini" else None,
+                )
+                gen.set_usage(result.text, result.prompt_tokens, result.output_tokens, result.cached_tokens)
         except ProviderUnavailable as e:
             attempts.append({"provider": provider, "model": model, "status": "skipped", "detail": str(e)})
             continue

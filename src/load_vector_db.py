@@ -11,7 +11,7 @@ DOMAIN_MAP_PATH = Path(__file__).parent.parent / "data" / "domain_classification
 
 
 def load_domain_map():
-    return json.loads(DOMAIN_MAP_PATH.read_text(encoding="utf-8"))
+    return {d["source_pdf"]: d["domain"] for d in json.loads(DOMAIN_MAP_PATH.read_text(encoding="utf-8"))}
 
 
 def load_text(conn, domain_map):

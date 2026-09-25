@@ -8,8 +8,11 @@ import agent_transform_route
 import agent_quality_generate
 import output_guardrail
 import reranker as reranker_module
-from db import get_connection
-from retrieval_executor import vector_search, hybrid_vector_search, graph_search, get_images_for_sections
+from db import connection
+from retrieval_executor import (
+    vector_search, hybrid_vector_search, graph_search,
+    get_images_for_sections, get_tables_for_sections,
+)
 from retrieval_config import MAX_RETRY_ATTEMPTS
 
 
@@ -23,6 +26,7 @@ class SubQueryState(TypedDict):
     complexity: str
     chunks: list
     images: list
+    tables: list
     sufficient: bool
     feedback: Optional[dict]
     attempt: int
@@ -86,9 +90,8 @@ def node_cache_check(state: GraphState) -> GraphState:
     if state.get("history") or state.get("notes") or not state.get("use_cache", True):
         return {**state, "cache_hit": False}
 
-    conn = get_connection()
-    cached = query_cache.get_cached(conn, state["cleaned_query"])
-    conn.close()
+    with connection() as conn:
+        cached = query_cache.get_cached(conn, state["cleaned_query"])
 
     if cached:
         return {**state, "cache_hit": True, "final_answer": _with_safety_note(state, cached["answer"])}
@@ -118,6 +121,7 @@ def node_transform_route(state: GraphState) -> GraphState:
             sq["complexity"] = "complex"
         sq["chunks"] = []
         sq["images"] = []
+        sq["tables"] = []
         sq["sufficient"] = False
         sq["feedback"] = None
         sq["attempt"] = 0
@@ -131,9 +135,8 @@ def node_cache_check_2(state: GraphState) -> GraphState:
         return state
 
     combined_query = " | ".join(sq["sub_query"] for sq in state["sub_queries"])
-    conn = get_connection()
-    cached = query_cache.get_cached(conn, combined_query)
-    conn.close()
+    with connection() as conn:
+        cached = query_cache.get_cached(conn, combined_query)
 
     if cached:
         return {**state, "cache_hit": True, "final_answer": _with_safety_note(state, cached["answer"])}
@@ -146,19 +149,27 @@ def _retrieve_for_sub_query(sq: dict) -> list:
     if not sq["needs_retrieval"]:
         return []
 
+    def plain_search(variant):
+        if sq["search_mode"] == "hybrid":
+            return hybrid_vector_search(variant)
+        return vector_search(variant)
+
     all_chunks = []
     for variant in sq["variants"] or [sq["sub_query"]]:
         if sq["data_source"] in ("vector", "both"):
-            if sq["search_mode"] == "hybrid":
-                all_chunks.extend(hybrid_vector_search(variant))
-            else:
-                all_chunks.extend(vector_search(variant))
+            all_chunks.extend(plain_search(variant))
 
         if sq["data_source"] in ("graph", "both"):
+            # The graph is a FILTER: it names the papers worth looking at, and the
+            # passages come from a vector search limited to those papers.
             graph_results = graph_search(variant)
-            if sq["data_source"] == "both" and graph_results:
+            if graph_results:
                 papers = list({r["source_pdf"] for r in graph_results})
                 all_chunks.extend(vector_search(variant, source_pdfs=papers))
+            elif sq["data_source"] == "graph":
+                # Graph alone found nothing to filter by: fall back to the normal
+                # search, so the question is never left with no context at all.
+                all_chunks.extend(plain_search(variant))
 
     seen = set()
     deduped = []
@@ -214,6 +225,8 @@ def merge_overlapping_sub_queries(sub_queries: list, threshold: float = OVERLAP_
         target["images_required"] = target["images_required"] or sq["images_required"]
         seen_images = {i.get("image_file") for i in target["images"]}
         target["images"] = target["images"] + [i for i in sq["images"] if i.get("image_file") not in seen_images]
+        seen_tables = {t.get("table_id") for t in target["tables"]}
+        target["tables"] = target["tables"] + [t for t in sq["tables"] if t.get("table_id") not in seen_tables]
 
     return merged
 
@@ -226,9 +239,13 @@ def node_retrieval_executor(state: GraphState) -> GraphState:
         if sq["sufficient"]:
             continue
         sq["chunks"] = _retrieve_for_sub_query(sq)
+        chunk_ids = [c["chunk_id"] for c in sq["chunks"]]
         if sq["images_required"]:
-            chunk_ids = [c["chunk_id"] for c in sq["chunks"]]
             sq["images"] = get_images_for_sections(chunk_ids=chunk_ids) if chunk_ids else []
+        # Unlike images (gated behind visual intent), tables are just another
+        # source of factual/numeric content - fetched whenever there are
+        # retrieved chunks to look near, no separate "tables_required" flag.
+        sq["tables"] = get_tables_for_sections(chunk_ids=chunk_ids) if chunk_ids else []
 
     return {**state, "sub_queries": merge_overlapping_sub_queries(state["sub_queries"])}
 
@@ -259,7 +276,9 @@ def node_reranker(state: GraphState) -> GraphState:
         return state
 
     for sq in state["sub_queries"]:
-        if sq["sufficient"] or sq["attempt"] != 2:
+        # Reranker is only ever routed to when max_attempt==1 (see
+        # route_after_quality_check) - so a sub-query's own attempt is 1.
+        if sq["sufficient"] or sq["attempt"] != 1:
             continue
         sq["chunks"] = reranker_module.rerank(sq["sub_query"], sq["chunks"])
 
@@ -271,7 +290,12 @@ def node_transform_route_retry(state: GraphState) -> GraphState:
         return state
 
     for sq in state["sub_queries"]:
-        if sq["sufficient"] or sq["attempt"] != 3:
+        # retry_route is only ever routed to when max_attempt==2 (see
+        # route_after_quality_check) - so a sub-query's own attempt is 2 here,
+        # not 3. Fixed 2026-09-25: same off-by-one as the reranker guard above
+        # - this previously checked attempt==3, which never matched, so the
+        # feedback-informed re-routing silently never happened either.
+        if sq["sufficient"] or sq["attempt"] != 2:
             continue
         result = agent_transform_route.transform_and_route(sq["sub_query"], feedback=sq["feedback"])
         if result and result.get("sub_queries"):
@@ -296,25 +320,25 @@ def node_generate(state: GraphState) -> GraphState:
         else:
             low_confidence = not sq["sufficient"]
             answer = agent_quality_generate.generate_answer(
-                sq["sub_query"], sq["chunks"], low_confidence=low_confidence,
+                sq["sub_query"], sq["chunks"], tables=sq["tables"], low_confidence=low_confidence,
                 complexity=sq.get("complexity", "complex"),
             )
+        check = output_guardrail.check_output(answer, sq["chunks"])
+        answer = check["cleaned_answer"]  # PII/credential-redacted - this is what the user actually sees
+        flags.extend(check["flags"])
+
         sq["answer"] = answer
         answers.append(answer)
         all_chunks.extend(sq["chunks"])
 
-        check = output_guardrail.check_output(answer, sq["chunks"])
-        flags.extend(check["flags"])
-
     final_answer = "\n\n".join(answers)
 
     if state.get("use_cache", True):
-        conn = get_connection()
         combined_query = state.get("combined_key") or " | ".join(sq["sub_query"] for sq in state["sub_queries"])
-        if not (state.get("history") or state.get("notes")):
-            query_cache.write_cache(conn, state["cleaned_query"], all_chunks, final_answer)
-        query_cache.write_cache(conn, combined_query, all_chunks, final_answer)
-        conn.close()
+        with connection() as conn:
+            if not (state.get("history") or state.get("notes")):
+                query_cache.write_cache(conn, state["cleaned_query"], all_chunks, final_answer)
+            query_cache.write_cache(conn, combined_query, all_chunks, final_answer)
 
     # The note is added AFTER caching, so the shared cache never stores it.
     return {**state, "final_answer": _with_safety_note(state, final_answer), "guardrail_flags": flags}
@@ -353,13 +377,13 @@ def build_graph():
 
     graph.add_node("input_guardrail", node_input_guardrail)
     graph.add_node("cache_check", node_cache_check)
-    graph.add_node("transform_route", node_transform_route)
+    graph.add_node("transform_route", node_transform_route)              # agent 1
     graph.add_node("cache_check_2", node_cache_check_2)
     graph.add_node("retrieval_executor", node_retrieval_executor)
-    graph.add_node("quality_check", node_quality_check)
+    graph.add_node("quality_check", node_quality_check)                  # agent 2
     graph.add_node("reranker", node_reranker)
-    graph.add_node("retry_route", node_transform_route_retry)
-    graph.add_node("generate", node_generate)
+    graph.add_node("retry_route", node_transform_route_retry)            # agent 1
+    graph.add_node("generate", node_generate)                            # agent 2
 
     graph.set_entry_point("input_guardrail")
     graph.add_conditional_edges("input_guardrail", route_after_input_guardrail, {"end": END, "cache_check": "cache_check"})

@@ -1,12 +1,14 @@
-# CrossScan Streamlit chat UI, deployed on Cloud Run (continuous deployment
-# from GitHub via Cloud Build). Postgres (Neon) and Neo4j (Aura) are external
-# managed services: set DATABASE_URL, NEO4J_* and GEMINI_API_KEY as env vars/
-# secrets on the Cloud Run service (same values as the local .env).
+# CrossScan Streamlit chat UI, deployed on Cloud Run by GitHub Actions (.github/workflows/tests.yml):
+# tests pass -> this image is built and pushed to Artifact Registry -> a no-traffic revision is
+# health-checked -> traffic moves to it. Postgres (Neon) and Neo4j (Aura) are external managed
+# services: set DATABASE_URL, NEO4J_*, GEMINI_API_KEY and the ADMIN_* / limit settings as env
+# vars/secrets on the Cloud Run service (same names as the local .env).
 FROM python:3.11-slim
 
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 COPY requirements.txt .
@@ -22,6 +24,31 @@ COPY requirements.txt .
 RUN pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 
+# Model weights are BAKED INTO THE IMAGE, so a cold start never downloads anything (the first
+# question used to wait minutes for ~1.5 GB from the Hugging Face Hub). Only the two models the
+# running app loads are baked: the question-embedding model and the reranker. CLIP and the other
+# ingestion-only models are not needed at runtime. The names come from the same config files the
+# app reads, so they cannot drift. The two small config files are copied BEFORE the rest of src/,
+# so this slow layer stays cached unless a model name changes.
+ENV HF_HOME=/opt/hf_cache
+COPY src/embedding_config.py src/retrieval_config.py ./src/
+RUN cd src && python -c "\
+from sentence_transformers import CrossEncoder, SentenceTransformer; \
+from embedding_config import TEXT_MODEL_NAME; \
+from retrieval_config import RERANKER_MODEL; \
+SentenceTransformer(TEXT_MODEL_NAME); CrossEncoder(RERANKER_MODEL); \
+print('baked:', TEXT_MODEL_NAME, RERANKER_MODEL)"
+# From here on the Hub is never contacted: a missing model fails fast and loudly instead of a slow
+# download. The build itself proves both models load offline.
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+RUN cd src && python -c "\
+from sentence_transformers import CrossEncoder, SentenceTransformer; \
+from embedding_config import TEXT_MODEL_NAME; \
+from retrieval_config import RERANKER_MODEL; \
+SentenceTransformer(TEXT_MODEL_NAME); CrossEncoder(RERANKER_MODEL); \
+print('offline load OK')"
+
 COPY src ./src
 # Source figures the chat UI shows alongside answers (render_extras() in chat_app.py). Only
 # this subfolder - .dockerignore excludes the rest of data/ (raw PDFs, embeddings, etc.), which
@@ -29,10 +56,6 @@ COPY src ./src
 # IMAGES_DIR.exists() first), but images just wouldn't show - worth the ~30MB to have them.
 COPY data/images ./data/images
 
-# Model weights (bge, CLIP, reranker, NSFW classifier) download from the HF Hub on first use
-# inside this same container - Cloud Run's filesystem is ephemeral per instance, so this repeats
-# on every cold start after scaling to zero. Expect a slower first request than the ~20s measured
-# locally (weights aren't pre-cached), not a broken deployment.
 WORKDIR /app/src
 EXPOSE 8000
 # Cloud Run injects its own PORT env var (default 8080) and health-checks THAT port, not a
@@ -42,4 +65,6 @@ EXPOSE 8000
 # enableCORS/enableXsrfProtection=false: Streamlit's defaults assume no reverse proxy in front of
 # it: Cloud Run terminates TLS and forwards requests such that the Origin header doesn't match
 # what Streamlit expects, which breaks its websocket connection (the whole app) unless disabled.
-CMD streamlit run chat_app.py --server.port=${PORT:-8000} --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false
+# showErrorDetails=none: an uncaught error shows users a plain message, never a stack trace (which
+# can expose host names and internals); the real error is still written to the Cloud Run logs.
+CMD streamlit run chat_app.py --server.port=${PORT:-8000} --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false --client.showErrorDetails=none

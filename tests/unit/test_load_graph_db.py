@@ -28,19 +28,20 @@ def test_load_entities_only_uses_verified_entities():
     session = FakeSession()
     entities = {
         "a.pdf": {
-            "verified": {"methods": ["CNN"], "datasets": ["LIDC"], "metrics": ["accuracy"]},
-            "unverified": {"methods": ["FakeMethod"], "datasets": [], "metrics": []},
+            "verified": {"methods": ["CNN"], "datasets": ["LIDC"], "metrics": ["accuracy"], "baselines": ["SVM"]},
+            "unverified": {"methods": ["FakeMethod"], "datasets": [], "metrics": [], "baselines": ["FakeBaseline"]},
         }
     }
 
-    method_count, dataset_count, metric_count = lgd.load_entities(session, entities)
+    method_count, dataset_count, metric_count, baseline_count = lgd.load_entities(session, entities)
 
     assert method_count == 1
     assert dataset_count == 1
     assert metric_count == 1
+    assert baseline_count == 1
     all_names = [q[1].get("name") for q in session.queries]
-    assert "FakeMethod" not in all_names
-    assert "CNN" in all_names
+    assert "FakeMethod" not in all_names and "FakeBaseline" not in all_names
+    assert "CNN" in all_names and "SVM" in all_names
 
 
 def test_load_sections_extracts_page_ranges(tmp_path, monkeypatch):

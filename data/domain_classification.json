@@ -1,14 +1,62 @@
-{
-  "1-s2.0-S1877050925029461-main.pdf": "lung-cancer",
-  "2404.03936v2.pdf": "land-cover",
-  "2510.26923v1.pdf": "lung-cancer",
-  "2602.10481v1.pdf": "protecting-context-and-prompts-deterministic",
-  "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf": "lung-cancer",
-  "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf": "land-cover",
-  "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf": "lung-cancer",
-  "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf": "lung-cancer",
-  "fmed-12-1567119.pdf": "lung-cancer",
-  "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf": "land-cover",
-  "LungPaper.pdf": "lung-cancer",
-  "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf": "land-cover"
-}
+[
+  {
+    "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+    "title": "A Capsule Network-Based Hybrid Model for Lung Nodule Detection",
+    "domain": "lung-nodule-detection"
+  },
+  {
+    "source_pdf": "2404.03936v2.pdf",
+    "title": "Deep Learning for Satellite Image Time Series Analysis: A Review",
+    "domain": "satellite-image-analysis"
+  },
+  {
+    "source_pdf": "2510.26923v1.pdf",
+    "title": "Scale-Aware Curriculum Learning for Data-Efficient Lung Nodule Detection with YOLOv11",
+    "domain": "lung-nodule-detection"
+  },
+  {
+    "source_pdf": "2602.10481v1.pdf",
+    "title": "Protecting Context and Prompts: Deterministic Security for Non-Deterministic AI",
+    "domain": "ai-security"
+  },
+  {
+    "source_pdf": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+    "title": "AI-Powered Lung Cancer Detection: Assessing VGG16 and CNN Architectures for CT Scan Image Classification",
+    "domain": "lung-cancer-diagnosis"
+  },
+  {
+    "source_pdf": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape.pdf",
+    "title": "Assessment of Machine Learning Algorithms for Land Cover Classification in a Complex Mountainous Landscape",
+    "domain": "land-cover-classification"
+  },
+  {
+    "source_pdf": "Classi cation of NSCLC subtypes using lung microbiome from resected tissue based on machine learning methods.pdf",
+    "title": "Classification of adenocarcinoma (AC) and squamous cell carcinoma (SCC) poses significant challenges for cytopathologists",
+    "domain": "lung-cancer-classification"
+  },
+  {
+    "source_pdf": "Deep learning-based approach to diagnose lung cancer using CT-scan images.pdf",
+    "title": "Deep learning-based approach to diagnose lung cancer using CT-scan images",
+    "domain": "lung-cancer-diagnosis"
+  },
+  {
+    "source_pdf": "fmed-12-1567119.pdf",
+    "title": "Deep learning object detection-based early detection of lung cancer",
+    "domain": "lung-cancer-detection"
+  },
+  {
+    "source_pdf": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery.pdf",
+    "title": "Land-Cover Classification Using Deep Learning with High-Resolution Remote-Sensing Imagery",
+    "domain": "land-cover-classification"
+  },
+  {
+    "source_pdf": "LungPaper.pdf",
+    "title": "Revisiting Segmentation of Lung Tumors from CT Images",
+    "domain": "lung-tumor-segmentation"
+  },
+  {
+    "source_pdf": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu Bhutan.pdf",
+    "title": "Utilizing Sentinel-2 Satellite Imagery for LULC and NDVI Change Dynamics for Gelephu, Bhutan",
+    "domain": "satellite-remote-sensing"
+  }
+]

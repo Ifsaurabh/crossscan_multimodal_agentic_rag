@@ -23,7 +23,8 @@ GENERATE_SYSTEM_INSTRUCTION = """You are a research-assistant answering question
 
 Instructions:
 - Answer using ONLY the retrieved context provided. Do not use outside knowledge.
-- Cite your source inline for each claim, in the format [source_pdf, p.X] immediately after the claim it supports.
+- Explain in your own words, as if summarizing the finding to a colleague - do not copy sentences verbatim from the source text.
+- Cite sources in the format [source_pdf, p.X], once per distinct claim or paragraph - not after every clause, and never two citations stacked back-to-back.
 - If images are relevant and listed below, reference them naturally in your answer.
 - Be concise and directly answer the question."""
 
@@ -36,13 +37,50 @@ Instructions:
 NOT_FROM_KNOWLEDGE_BASE_LABEL = "**Note: this answer is not from the knowledge base — it is AI-generated from general knowledge.**\n\n"
 
 
-def format_context(chunks: list) -> str:
+def format_context(chunks: list, tables: list = None) -> str:
+    # OLD VERSION (commented out, kept for reference): sent parent_text once
+    # PER CHUNK with no dedup. A parent section is usually split into several
+    # chunks, and several of them are often retrieved together (especially
+    # across query variants), so the SAME full section text - sometimes
+    # 500-1500+ tokens - was being sent to the model multiple times over.
+    # Measured effect: 22k-30k prompt tokens for a single question.
+    #
+    # blocks = []
+    # for c in chunks:
+    #     source = c.get("source_pdf", "unknown")
+    #     page = c.get("page_start", "?")
+    #     text = c.get("parent_text") or c.get("text", "")
+    #     blocks.append(f"[{source}, p.{page}]\n{text}")
+    # return "\n\n".join(blocks)
+
+    # NEW VERSION: dedup by parent_id, so each parent section's full text is
+    # included at most once, no matter how many of its chunks were retrieved.
+    # No loss of information - the full section was already being sent - just
+    # no longer repeated.
     blocks = []
+    seen_parents = set()
     for c in chunks:
+        parent_id = c.get("parent_id")
+        if parent_id is not None:
+            if parent_id in seen_parents:
+                continue
+            seen_parents.add(parent_id)
         source = c.get("source_pdf", "unknown")
         page = c.get("page_start", "?")
         text = c.get("parent_text") or c.get("text", "")
-        blocks.append(f"[{source}, p.{page}]\n{text}")
+        # A chunk that belongs to the whole paper (a knowledge-graph fact) has no page.
+        header = f"[{source}]" if page is None else f"[{source}, p.{page}]"
+        blocks.append(f"{header}\n{text}")
+
+    # Tables never went through this function before - fetched by
+    # retrieval_graph.py but never actually reaching the model. Marked
+    # "(Table)" so the model (and a human reading the prompt) can tell
+    # tabular data apart from prose at a glance.
+    for t in (tables or []):
+        source = t.get("source_pdf", "unknown")
+        page = t.get("page", "?")
+        blocks.append(f"[{source}, p.{page}] (Table)\n{t.get('text', '')}")
+
     return "\n\n".join(blocks)
 
 
@@ -87,10 +125,11 @@ def answer_task(complexity: str) -> str:
     return "answer_simple" if complexity == "simple" else "answer_complex"
 
 
-def generate_answer(query: str, chunks: list, low_confidence: bool = False, client=None, complexity: str = "complex") -> str:
+def generate_answer(query: str, chunks: list, tables: list = None, low_confidence: bool = False,
+                     client=None, complexity: str = "complex") -> str:
     """Agent 2, generation phase. `complexity` (from the query planner)
     picks the model tier the answer is written on."""
-    context = format_context(chunks) if chunks else "(no context retrieved)"
+    context = format_context(chunks, tables) if (chunks or tables) else "(no context retrieved)"
     caveat_instruction = (
         "\n\nIMPORTANT: retrieval confidence was low for this query. Start your answer with a brief "
         "caveat noting the answer may be incomplete, then answer with whatever context is available."
