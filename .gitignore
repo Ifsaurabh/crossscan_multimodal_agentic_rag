@@ -12,8 +12,8 @@ __pycache__/
 *.key
 service-account*.json
 
-# --- Screenshots of traces / dashboards: they show real questions, answers and project ids ---
-screenshots/
+# screenshots/ is tracked on purpose (evidence for the README). It holds cropped copies only:
+# keep any uncropped originals (address bar, project id, account name) outside the repository.
 
 # --- Local tool state and caches ---
 .deepeval/
