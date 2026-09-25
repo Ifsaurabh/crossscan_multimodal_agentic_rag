@@ -2,9 +2,9 @@ name: Live tests + evaluation (weekly / manual)
 
 # The only workflow that spends real Gemini quota and touches the real
 # deployed Postgres/Neo4j (Neon + Aura). Never runs on push - only on a
-# weekly schedule and on-demand. Needs 4 repo secrets set once in
+# weekly schedule and on-demand. Needs 5 repo secrets set once in
 # GitHub -> Settings -> Secrets and variables -> Actions:
-#   GEMINI_API_KEY, DATABASE_URL, NEO4J_URI, NEO4J_PASSWORD
+#   GEMINI_API_KEY, DATABASE_URL, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 # (same values as your real .env - never commit them).
 
 on:
@@ -30,7 +30,7 @@ env:
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
   NEO4J_URI: ${{ secrets.NEO4J_URI }}
-  NEO4J_USER: neo4j
+  NEO4J_USER: ${{ secrets.NEO4J_USER }}   # NOT the word "neo4j": this Aura instance uses an instance-specific username
   NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
   SCHEMA_NAME: rag_new
   LANGFUSE_DISABLED: "1"
