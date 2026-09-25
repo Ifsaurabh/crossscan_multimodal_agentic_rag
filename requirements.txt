@@ -1,6 +1,6 @@
 kagglehub==1.0.2
 pymupdf==1.28.2
-docling==2.128.0
+docling==2.130.0
 pillow==12.3.0
 transformers==5.17.0
 torch==2.14.0
@@ -15,8 +15,8 @@ pgvector
 python-dotenv
 neo4j
 google-genai
-langgraph==1.2.11
-deepeval==4.2.3
+langgraph==1.2.12
+deepeval==4.2.4
 ragas==0.4.3
 dvc==3.67.1
 mlflow==3.16.1
@@ -26,4 +26,4 @@ uvicorn==0.53.0
 httpx
 streamlit==1.64.0
 openai==1.109.1
-anthropic==1.7.0
+anthropic==1.8.0
