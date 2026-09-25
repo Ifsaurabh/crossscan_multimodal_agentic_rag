@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free disk space (the image is several GB and Docker needs room to build it)
         run: |
