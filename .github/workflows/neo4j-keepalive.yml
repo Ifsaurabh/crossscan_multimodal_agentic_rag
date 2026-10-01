@@ -28,7 +28,7 @@ jobs:
       NEO4J_USER: ${{ secrets.NEO4J_USER }}   # instance-specific username, NOT the word "neo4j"
       NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
