@@ -195,6 +195,7 @@ def handle_message(
             conn, user_id, session_id, "assistant", answer,
             metadata={
                 "sources": sources, "images": images, "flags": flags, "cache_hit": cache_hit, "blocked": blocked,
+                "injection_score": result.get("injection_score"),
                 "latency_s": latency, "prompt_tokens": usage["prompt_tokens"], "output_tokens": usage["output_tokens"],
             },
         )

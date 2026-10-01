@@ -1142,3 +1142,56 @@ def test_a_medical_question_gets_the_note_on_the_final_answer(pipeline):
     result = run(pipeline, query=MEDICAL)
 
     assert result["final_answer"].startswith(rg.MEDICAL_NOTE) and "medical_advice_framing" in result["guardrail_flags"]
+
+
+def input_check_result(**overrides):
+    base = {"cleaned_query": "q", "blocked": False, "reasons": [], "medical_advice_detected": False,
+            "injection_suspected": False}
+    return {**base, **overrides}
+
+
+def test_a_suspected_injection_is_flagged_but_the_query_is_still_answered(monkeypatch):
+    monkeypatch.setattr(rg.query_guardrail, "check_input", lambda q: input_check_result(injection_suspected=True))
+
+    result = rg.node_input_guardrail(make_state())
+
+    assert result["blocked"] is False and result["block_reason"] is None
+    assert result["guardrail_flags"] == ["prompt_injection_suspected"]
+
+
+def test_a_blocked_injection_does_not_also_get_the_suspected_flag(monkeypatch):
+    monkeypatch.setattr(rg.query_guardrail, "check_input", lambda q: input_check_result(
+        blocked=True, injection_suspected=True, reasons=["prompt_injection_detected"]))
+
+    result = rg.node_input_guardrail(make_state())
+
+    assert result["blocked"] is True and result["guardrail_flags"] == []
+
+
+def test_the_model_score_goes_into_the_state_and_to_langfuse(monkeypatch):
+    sent = []
+    monkeypatch.setattr(rg.query_guardrail, "check_input", lambda q: input_check_result(injection_score=0.83, injection_suspected=True))
+    monkeypatch.setattr(rg.langfuse_client, "score_current_trace", lambda name, value, comment=None: sent.append((name, value, comment)))
+
+    result = rg.node_input_guardrail(make_state())
+
+    assert result["injection_score"] == 0.83
+    assert sent == [("prompt_injection_score", 0.83, "flagged")]
+
+
+def test_an_unflagged_score_is_still_recorded_without_a_comment(monkeypatch):
+    sent = []
+    monkeypatch.setattr(rg.query_guardrail, "check_input", lambda q: input_check_result(injection_score=0.02))
+    monkeypatch.setattr(rg.langfuse_client, "score_current_trace", lambda name, value, comment=None: sent.append((name, value, comment)))
+
+    assert rg.node_input_guardrail(make_state())["injection_score"] == 0.02
+    assert sent == [("prompt_injection_score", 0.02, None)]
+
+
+def test_no_score_means_nothing_is_sent_to_langfuse(monkeypatch):
+    sent = []
+    monkeypatch.setattr(rg.query_guardrail, "check_input", lambda q: input_check_result())  # model off / regex blocked
+    monkeypatch.setattr(rg.langfuse_client, "score_current_trace", lambda *a, **k: sent.append(a))
+
+    assert rg.node_input_guardrail(make_state())["injection_score"] is None
+    assert sent == []

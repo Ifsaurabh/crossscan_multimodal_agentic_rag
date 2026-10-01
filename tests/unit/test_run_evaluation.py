@@ -110,3 +110,35 @@ def test_aggregate_means_and_skips_none():
 
 def test_aggregate_empty_rows():
     assert re_.aggregate([]) == {}
+
+
+def test_ragas_can_be_imported_despite_langchain_community_dropping_vertexai():
+    """ragas 0.4.3 imports ChatVertexAI/VertexAI from langchain_community, which 0.4+ no longer has; before the
+    shim `import ragas` raised ModuleNotFoundError and RAGAS scoring could never run."""
+    re_._allow_ragas_import()
+
+    from ragas.metrics.collections import ContextPrecision, ContextRecall, Faithfulness
+
+    assert Faithfulness and ContextPrecision and ContextRecall
+
+
+def test_the_ragas_judge_clients_are_async(monkeypatch):
+    """RAGAS scores through its async path and refuses a synchronous client ("Cannot use agenerate() with a
+    synchronous client"), which is what the first real run hit with the old sync clients."""
+    import openai
+
+    monkeypatch.setenv("TEST_GEMINI_KEY", "k")
+    seen = {}
+
+    def fake_factory(model, provider="openai", client=None, **kwargs):
+        seen.update(model=model, provider=provider, client=client)
+        return "judge"
+
+    import ragas.llms
+
+    monkeypatch.setattr(ragas.llms, "llm_factory", fake_factory)
+    spec = {"provider": "gemini", "model": "gemini-x", "config": {"api_key_env": "TEST_GEMINI_KEY"}}
+
+    assert re_._ragas_llm_for(spec) == "judge"
+    assert isinstance(seen["client"], openai.AsyncOpenAI)
+    assert "generativelanguage.googleapis.com" in str(seen["client"].base_url)

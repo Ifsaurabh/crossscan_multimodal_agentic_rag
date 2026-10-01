@@ -1,0 +1,138 @@
+{
+  "generated": "2026-09-19T22:22:48",
+  "question": "What accuracy did the VGG16 and CNN models achieve for lung cancer CT scan classification, and which performed better?",
+  "answer": "In the comparative study evaluating convolutional neural network (CNN) architectures for three-class lung cancer CT scan classification (Normal, Benign, Malignant), the models achieved the following test accuracies:\n\n* **VGG16:** **98.18%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25]\n* **MobileNetV2:** **93.64%** (and a training accuracy of 97.15%) [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.13, p.25]\n* **ResNet50:** **93.33%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25]\n* **InceptionV3:** **88.79%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25]\n\n### Which performed better:\n**VGG16 performed the best**, achieving the highest overall test accuracy (98.18%), superior generalization, and the lowest misclassification rate across categories, outperforming the other CNN architectures [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.13, p.25]. This also aligns with prior literature cited in the paper confirming that deeper pre-trained networks like VGG16 consistently outperform traditional CNN models in lung cancer classification [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3, p.13].",
+  "blocked": false,
+  "cache_hit": false,
+  "guardrail_flags": [],
+  "sub_queries": [
+    {
+      "sub_query": "What accuracy did the VGG16 and CNN models achieve for lung cancer CT scan classification, and which performed better?",
+      "complexity": "complex",
+      "data_source": "vector",
+      "search_mode": "hybrid",
+      "attempts": 1,
+      "sufficient": true,
+      "chunks": 6,
+      "images": 0
+    }
+  ],
+  "sources": [
+    {
+      "paper": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "page": 3
+    },
+    {
+      "paper": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "page": 25
+    },
+    {
+      "paper": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "page": 6
+    },
+    {
+      "paper": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "page": 11
+    },
+    {
+      "paper": "AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf",
+      "page": 13
+    }
+  ],
+  "timing": {
+    "python_imports_s": 46.76,
+    "build_graph_s": 0.02,
+    "pipeline_wall_s": 58.18,
+    "sum_of_model_call_s": 38.58
+  },
+  "nodes": [
+    {
+      "node": "input_guardrail",
+      "seconds": 0.04,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "node": "cache_check",
+      "seconds": 0.0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "node": "transform_route",
+      "seconds": 29.91,
+      "model_calls": 1,
+      "prompt_tokens": 749,
+      "output_tokens": 174
+    },
+    {
+      "node": "cache_check_2",
+      "seconds": 0.0,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "node": "retrieval_executor",
+      "seconds": 19.56,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "node": "quality_check",
+      "seconds": 1.74,
+      "model_calls": 1,
+      "prompt_tokens": 6924,
+      "output_tokens": 20
+    },
+    {
+      "node": "generate",
+      "seconds": 6.93,
+      "model_calls": 1,
+      "prompt_tokens": 6936,
+      "output_tokens": 387
+    }
+  ],
+  "model_calls": [
+    {
+      "task": "query_planner",
+      "tier": "fast",
+      "model": "gemini-3.5-flash-lite",
+      "seconds": 29.91,
+      "prompt_tokens": 749,
+      "output_tokens": 174,
+      "fallback_used": true,
+      "error": null
+    },
+    {
+      "task": "quality_check",
+      "tier": "fast",
+      "model": "gemini-3.5-flash-lite",
+      "seconds": 1.74,
+      "prompt_tokens": 6924,
+      "output_tokens": 20,
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "task": "answer_complex",
+      "tier": "reasoning",
+      "model": "gemini-3.8-flash",
+      "seconds": 6.93,
+      "prompt_tokens": 6936,
+      "output_tokens": 387,
+      "fallback_used": false,
+      "error": null
+    }
+  ],
+  "tokens": {
+    "calls": 3,
+    "prompt": 14609,
+    "output": 581,
+    "cached": 0,
+    "estimated_cost_usd": 0.0
+  }
+}

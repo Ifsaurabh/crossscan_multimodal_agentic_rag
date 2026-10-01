@@ -65,6 +65,19 @@ def flush():
             pass
 
 
+def score_current_trace(name: str, value: float, comment: str = None) -> None:
+    """Attach a numeric score to the trace currently running (inside a graph
+    node). Never raises and does nothing when Langfuse is off - same
+    "observability must not break the pipeline" rule as the rest of this file."""
+    client = get_client()
+    if client is None:
+        return
+    try:
+        client.score_current_trace(name=name, value=float(value), data_type="NUMERIC", comment=comment)
+    except Exception as e:
+        print(f"   (Langfuse score '{name}' not recorded: {e})")
+
+
 class _NoOpGeneration:
     """Stand-in used when Langfuse is off or logging fails - callers never
     need to check, they just call .set_usage() unconditionally."""

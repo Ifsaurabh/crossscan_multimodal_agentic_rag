@@ -22,6 +22,7 @@ def initial_state(query: str, history: str = "", notes: str = "", use_cache: boo
         "sub_queries": [],
         "final_answer": None,
         "guardrail_flags": [],
+        "injection_score": None,
     }
 
 

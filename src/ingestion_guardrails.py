@@ -1,15 +1,19 @@
+"""Ingestion guardrail.
+
+PII is redacted by Presidio and injection is scored by Llama Prompt Guard (both
+engines live in query_guardrail). Injection is FLAG-ONLY here: the AI-security
+paper in the corpus legitimately quotes attack phrases, so a flagged section is
+reported (with its score) but never dropped.
+"""
 import json
-import re
 from pathlib import Path
 
-from query_guardrail import INJECTION_REGEX
+import query_guardrail as qg
 
 PREPARED_DIR = Path(__file__).parent.parent / "data" / "prepared"
 GUARDED_DIR = Path(__file__).parent.parent / "data" / "guarded"
 REPORT_PATH = Path(__file__).parent.parent / "data" / "guardrail_report.json"
 DOMAIN_MAP_PATH = Path(__file__).parent.parent / "data" / "domain_classification.json"
-
-EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
 # Small representative unsafe-content keyword list (generic; not domain-specific).
 UNSAFE_KEYWORDS = [
@@ -18,16 +22,7 @@ UNSAFE_KEYWORDS = [
 
 
 def redact_pii(text: str):
-    redactions = 0
-
-    def replace_email(match):
-        nonlocal redactions
-        redactions += 1
-        return "[REDACTED_EMAIL]"
-
-    text = EMAIL_PATTERN.sub(replace_email, text)
-
-    return text, redactions
+    return qg.redact_pii(text)
 
 
 def contains_unsafe_content(text: str):
@@ -64,10 +59,10 @@ def run_guardrails():
             if unsafe:
                 return None, unsafe
 
-            injection_match = INJECTION_REGEX.search(text)
-            if injection_match:
+            injection = qg.classify_injection(text)
+            if injection["flagged"]:
                 doc_entry["injection_flags"].append(
-                    {"where": where, "domain": domain, "matched_text": injection_match.group()})
+                    {"where": where, "domain": domain, "score": round(injection["score"], 4)})
 
             redacted, count = redact_pii(text)
             doc_entry["pii_redactions"] += count

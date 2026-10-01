@@ -1,38 +1,17 @@
+"""Output guardrail.
+
+PII and credentials are redacted by Presidio (engine in query_guardrail). The regex rules
+here are citation verification, the clinical-overstatement wording check and the injection-LEAK
+check. Prompt Guard is deliberately NOT used on answers: on real leaks in the model's own voice
+("Here is my full system prompt: ...") it scored 0.001-0.003, and it scored a correct answer that
+quotes an attack payload from the AI-security paper at 0.973 (reports/prompt_guard_eval_2026-10-01.md).
+"""
 import re
 
-# Same pattern as query_guardrail.py/ingestion_guardrails.py - last checkpoint
-# before the answer reaches the user, so PII gets REDACTED here (not just
-# flagged): closes the general-knowledge-answer path, which never goes
-# through document/query redaction since it involves no retrieved content.
-EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+import query_guardrail as qg
 
-# Credential/secret shapes - matches actual key formats, not bare words like
-# "password" (a security paper discussing password policy in prose is not a
-# leak; the AI-security paper in this corpus already contains realistic
-# example payloads, so an actual key-shaped string appearing is plausible).
-CREDENTIAL_PATTERNS = [
-    r"\bsk-[A-Za-z0-9]{20,}\b",                                    # OpenAI-style key
-    r"\bAKIA[0-9A-Z]{16}\b",                                       # AWS access key ID
-    r"(?:api[_-]?key|secret|token)\s*[:=]\s*['\"]?[A-Za-z0-9\-_]{16,}['\"]?",
-    r"password\s*[:=]\s*['\"]?\S{6,}['\"]?",                       # password=... assignment, not bare mentions
-    r"Bearer\s+[A-Za-z0-9\-_.]{20,}",                              # Bearer token
-]
-CREDENTIAL_REGEX = re.compile("|".join(CREDENTIAL_PATTERNS), re.IGNORECASE)
-
-# Citation format requested by agent_quality_generate.py's prompt:
-# "[source_pdf, p.4]". Models drift from it, and every format that is NOT
-# recognised here silently escapes verification, so the pattern accepts what
-# was actually seen in live answers: "p.4", "p. 4", "p.1, p.14", "p. 1, 8",
-# and page ranges such as "pp. 3-5" (both ends are checked).
-_PAGE = r"\d+(?:\s*[-–]\s*\d+)?"
-CITATION_PATTERN = re.compile(
-    rf"\[([^,\]]+),\s*(pp?\.\s*{_PAGE}(?:\s*[,;]\s*(?:pp?\.\s*)?{_PAGE})*)\]"
-)
-PAGE_NUMBER_PATTERN = re.compile(r"(\d+)")
-
-# Same injection patterns as Stage 7 (src/query_guardrail.py) - defense in
-# depth: check the OUTPUT doesn't show signs the model was successfully
-# manipulated into ignoring its instructions (e.g. leaking a system prompt).
+# Same idea as the old output guardrail: check the OUTPUT doesn't show signs the model was
+# successfully manipulated into ignoring its instructions (e.g. leaking a system prompt).
 #
 # The model talking about ITS OWN instructions is the signal. The bare words
 # "system prompt" are not: the corpus includes an AI-security paper, so a
@@ -45,6 +24,17 @@ INJECTION_LEAK_PATTERNS = [
     r"ignoring (previous|prior) instructions",
 ]
 INJECTION_LEAK_REGEX = re.compile("|".join(INJECTION_LEAK_PATTERNS), re.IGNORECASE)
+
+# Citation format requested by agent_quality_generate.py's prompt:
+# "[source_pdf, p.4]". Models drift from it, and every format that is NOT
+# recognised here silently escapes verification, so the pattern accepts what
+# was actually seen in live answers: "p.4", "p. 4", "p.1, p.14", "p. 1, 8",
+# and page ranges such as "pp. 3-5" (both ends are checked).
+_PAGE = r"\d+(?:\s*[-–]\s*\d+)?"
+CITATION_PATTERN = re.compile(
+    rf"\[([^,\]]+),\s*(pp?\.\s*{_PAGE}(?:\s*[,;]\s*(?:pp?\.\s*)?{_PAGE})*)\]"
+)
+PAGE_NUMBER_PATTERN = re.compile(r"(\d+)")
 
 CLINICAL_OVERSTATEMENT_PATTERNS = [
     r"you (should|must) take",
@@ -90,9 +80,10 @@ def verify_citations(answer: str, retrieved_chunks: list):
 
 
 def check_output(answer: str, retrieved_chunks: list) -> dict:
-    """Stage 10 Output Guardrail. Deterministic, no LLM call."""
-    cleaned_answer, pii_redactions = EMAIL_PATTERN.subn("[REDACTED_EMAIL]", answer)
-    cleaned_answer, credential_redactions = CREDENTIAL_REGEX.subn("[REDACTED_CREDENTIAL]", cleaned_answer)
+    """Stage 10 Output Guardrail. No LLM call."""
+    cleaned_answer, counts = qg.redact(answer)
+    credential_redactions = counts.get("CREDENTIAL", 0)
+    pii_redactions = sum(counts.values()) - credential_redactions
 
     verified, unverified = verify_citations(cleaned_answer, retrieved_chunks)
     injection_leak_detected = bool(INJECTION_LEAK_REGEX.search(cleaned_answer))

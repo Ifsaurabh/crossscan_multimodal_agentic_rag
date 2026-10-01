@@ -1,0 +1,5 @@
+AllProvidersFailed: No model in tier 'evaluation' could answer. gemini:gemini-3.7-flash failed (InstructorRetryException: <failed_attempts>
+
+<generation number="1">
+<exception>
+    Error code: 503 - [{'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually tempo

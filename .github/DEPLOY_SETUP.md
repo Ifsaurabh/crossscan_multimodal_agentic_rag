@@ -70,6 +70,15 @@ the `deploy` job in `tests.yml`.
 3. Optional manual approval before each deploy: GitHub -> Settings -> Environments -> `production` ->
    Required reviewers.
 
+## GitHub repository secrets used by the workflows
+
+- `HF_TOKEN`: a Hugging Face read token whose account has accepted the licence for
+  `meta-llama/Llama-Prompt-Guard-2-86M`. The deploy build passes it to Docker as a build secret to bake the
+  gated model into the image, and **fails without it**. Pull-request builds just warn and skip the model.
+- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`: used by the weekly live evaluation and by
+  `neo4j-keepalive.yml`, which queries Neo4j every other day because Aura Free pauses after about 3 days idle
+  (a paused instance can only be resumed by hand in the Aura console; the failed run is your signal).
+
 ## Secrets on the service (do once, after the first successful deploy)
 
 - `NEO4J_USER` is a plain environment variable on the service. Leave it as it is: attaching a **secret**

@@ -46,6 +46,9 @@ jobs:
           file: Dockerfile
           push: false
           load: true
+          # Empty on pull requests from forks and Dependabot: the build then skips Prompt Guard with a warning.
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
           tags: crossscan:ci
 
       - name: Start the container and check it is healthy
