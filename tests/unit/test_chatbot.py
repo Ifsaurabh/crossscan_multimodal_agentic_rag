@@ -562,3 +562,24 @@ def test_collect_sources_and_images_dedupe_and_skip_missing():
         {"source_pdf": "a.pdf", "page": 1}, {"source_pdf": "b.pdf", "page": 4},
     ]
     assert chatbot.collect_images(result) == []
+
+
+def test_a_flagged_query_is_stored_with_its_flag_and_score(monkeypatch):
+    """The flag and the Prompt Guard score land in the assistant message's metadata (JSONB), so flagged
+    traffic can be queried later: metadata->'flags' ? 'prompt_injection_suspected'."""
+    h = Harness(monkeypatch)
+    flagged = graph_result(guardrail_flags=["prompt_injection_suspected"], injection_score=0.83)
+
+    result = chatbot.handle_message(USER, None, "Explain how jailbreaks work", conn=FakeConn(), invoke=h.invoke(flagged))
+
+    stored = h.added[1][3]
+    assert stored["flags"] == ["prompt_injection_suspected"] and stored["injection_score"] == 0.83
+    assert result["guardrail_flags"] == ["prompt_injection_suspected"]
+
+
+def test_a_query_with_no_model_score_is_stored_with_a_null_score(monkeypatch):
+    h = Harness(monkeypatch)
+
+    chatbot.handle_message(USER, None, "What is a CNN?", conn=FakeConn(), invoke=h.invoke())
+
+    assert h.added[1][3]["injection_score"] is None

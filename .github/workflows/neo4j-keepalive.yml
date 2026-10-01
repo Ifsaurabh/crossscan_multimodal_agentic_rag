@@ -1,0 +1,52 @@
+name: Neo4j keep-alive
+
+# Aura Free pauses an instance after ~3 days without a query, and a paused instance has to be
+# resumed by hand in the Aura console (its hostname stops resolving until then). The only other
+# job that touches Neo4j is the weekly live-and-eval run, which is too rare. This runs one trivial
+# read every other day so the instance never reaches the pause limit.
+#
+# If the instance is ALREADY paused this job fails (DNS/connection error) - that failure email is
+# the signal to resume it in the console; a query cannot wake a paused Aura instance.
+#
+# Note: GitHub turns off scheduled workflows after 60 days without repository activity; a push
+# or a manual "Run workflow" re-enables them.
+
+on:
+  schedule:
+    - cron: "0 6 */2 * *"  # 06:00 UTC on odd days of the month (gap is at most 2 days, also across month ends)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEO4J_URI: ${{ secrets.NEO4J_URI }}
+      NEO4J_USER: ${{ secrets.NEO4J_USER }}   # instance-specific username, NOT the word "neo4j"
+      NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Query Neo4j once
+        run: |
+          pip install --quiet neo4j
+          python - <<'EOF'
+          import os
+          from neo4j import GraphDatabase
+
+          driver = GraphDatabase.driver(
+              os.environ["NEO4J_URI"],
+              auth=(os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"]),
+              connection_timeout=30,
+          )
+          with driver:
+              driver.verify_connectivity()
+              with driver.session() as session:
+                  nodes = session.run("MATCH (n) RETURN count(n) AS c").single()["c"]
+          print(f"Neo4j is awake: {nodes} nodes")
+          EOF

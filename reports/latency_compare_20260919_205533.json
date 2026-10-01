@@ -1,0 +1,115 @@
+{
+  "question": "What accuracy did the VGG16 and CNN models achieve for lung cancer CT scan classification, and which performed better?",
+  "python_imports_s": 42.5,
+  "runs": [
+    {
+      "label": "1. COLD (first question in this process, answer cache on -> miss, then written)",
+      "use_cache": true,
+      "wall_s": 57.68,
+      "cache_hit": false,
+      "model_calls": 5,
+      "prompt_tokens": 30207,
+      "output_tokens": 1020,
+      "model_seconds": 40.05,
+      "fallback_calls": 0,
+      "nodes": [
+        [
+          "input_guardrail",
+          0.04
+        ],
+        [
+          "cache_check",
+          0.2
+        ],
+        [
+          "transform_route",
+          10.04
+        ],
+        [
+          "cache_check_2",
+          0.07
+        ],
+        [
+          "retrieval_executor",
+          17.03
+        ],
+        [
+          "quality_check",
+          11.65
+        ],
+        [
+          "generate",
+          18.65
+        ]
+      ],
+      "answer_chars": 2411,
+      "answer": "In the evaluated study, the CNN architectures achieved the following test accuracies for three-class lung cancer CT scan classification (Normal, Benign, and Malignant):\n\n* **VGG16:** **98.18%** test accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.1, p.25].\n* **MobileNetV2:** **93.64%** test accuracy (and a training accuracy of 97.15%) [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.13, p.25].\n* **ResNet50:** **93.33%** test accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n* **InceptionV3:** **88.79%** test accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n\nAdditionally, related studies cited in the paper reported the following accuracies for CT scan classification:\n* **Zargar et al. (VGG16):** 91% accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Aharonu and Kumar (CNN framework):** 94.11% accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Bherje et al. (CNN/deep learning framework):** 72.41% average accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n\n**VGG16** performed better than other CNN architectures [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25, p.28]:\n\n* **In the main study:** VGG16 achieved the highest test accuracy of **98.18%** for the three-class classification task (Normal, Benign, Malignant), outperforming the other evaluated CNN architectures: MobileNetV2 (93.64%), ResNet50 (93.33%), and InceptionV3 (88.79%) [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n* **Compared to basic/traditional CNNs:** Literature cited in the paper confirms that VGG16 outperforms basic or traditional CNN models in terms of learning efficiency, feature extraction capabilities, and overall diagnostic accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3]."
+    },
+    {
+      "label": "2. WARM (same question, answer cache OFF: only loaded models help)",
+      "use_cache": false,
+      "wall_s": 65.78,
+      "cache_hit": false,
+      "model_calls": 5,
+      "prompt_tokens": 40175,
+      "output_tokens": 1369,
+      "model_seconds": 60.61,
+      "fallback_calls": 0,
+      "nodes": [
+        [
+          "input_guardrail",
+          0.0
+        ],
+        [
+          "cache_check",
+          0.0
+        ],
+        [
+          "transform_route",
+          36.77
+        ],
+        [
+          "cache_check_2",
+          0.0
+        ],
+        [
+          "retrieval_executor",
+          5.15
+        ],
+        [
+          "quality_check",
+          9.87
+        ],
+        [
+          "generate",
+          13.99
+        ]
+      ],
+      "answer_chars": 3924,
+      "answer": "Based on the provided research context, the accuracies achieved by VGG16 and other CNN models for lung cancer CT scan classification are as follows:\n\n### Primary Study Results\nIn the main study evaluating three-class CT scan classification (Normal, Benign, Malignant):\n* **VGG16:** Achieved the highest test accuracy of **98.18%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.1, p.13, p.25].\n* **MobileNetV2:** Achieved a test accuracy of **93.64%** (and a training accuracy of 97.15%) [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.13, p.25].\n* **ResNet50:** Achieved a test accuracy of **93.33%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n* **InceptionV3:** Achieved a test accuracy of **88.79%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n\n---\n\n### Related Literature Results\nPrior studies cited within the literature review reported the following accuracy rates for CT scan classification:\n* **Aharonu and Kumar:** Reported an accuracy rate of **94.11%** using a CNN-based framework [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Zargar et al.:** Achieved **91%** accuracy (with 92.08% sensitivity and 93% AUC) using VGG16 to classify carcinoma nodules in CT scans [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Bherje et al.:** Achieved an average accuracy of **72.41%** using a CNN deep learning framework [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n\nBased on the provided context, **VGG16 performed better** than traditional/basic CNNs and other evaluated CNN architectures for lung cancer classification:\n\n* **Comparison to Traditional/Basic CNNs:** Xu compared traditional CNN models with deeper architectures and found that while basic CNNs achieved acceptable accuracy, VGG16 outperformed them in learning efficiency and overall accuracy due to its enhanced feature extraction capabilities [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3, p.13, p.25]. Similarly, Singh et al. identified VGG16 as a superior architecture for detecting malignant tissues, outperforming other CNN models in accuracy and feature extraction [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Comparison Among Evaluated CNN Architectures:** In a comprehensive evaluation comparing four CNN architectures (VGG16, MobileNetV2, ResNet50, and InceptionV3), **VGG16 emerged as the most effective model overall** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.11, p.13]:\n  * **VGG16** achieved the highest test accuracy of **98.18%** and superior generalization, excelling in malignant detection with minimal misclassifications and achieving perfect classification for normal cases [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.13, p.25].\n  * **MobileNetV2** achieved a test accuracy of **93.64%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n  * **ResNet50** achieved a test accuracy of **93.33%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n  * **InceptionV3** achieved a test accuracy of **88.79%** [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25]."
+    },
+    {
+      "label": "3. CACHED (same question, answer cache ON: should be a hit)",
+      "use_cache": true,
+      "wall_s": 0.17,
+      "cache_hit": true,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "output_tokens": 0,
+      "model_seconds": 0,
+      "fallback_calls": 0,
+      "nodes": [
+        [
+          "input_guardrail",
+          0.0
+        ],
+        [
+          "cache_check",
+          0.17
+        ]
+      ],
+      "answer_chars": 2411,
+      "answer": "In the evaluated study, the CNN architectures achieved the following test accuracies for three-class lung cancer CT scan classification (Normal, Benign, and Malignant):\n\n* **VGG16:** **98.18%** test accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.1, p.25].\n* **MobileNetV2:** **93.64%** test accuracy (and a training accuracy of 97.15%) [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.13, p.25].\n* **ResNet50:** **93.33%** test accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n* **InceptionV3:** **88.79%** test accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n\nAdditionally, related studies cited in the paper reported the following accuracies for CT scan classification:\n* **Zargar et al. (VGG16):** 91% accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Aharonu and Kumar (CNN framework):** 94.11% accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n* **Bherje et al. (CNN/deep learning framework):** 72.41% average accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3].\n\n**VGG16** performed better than other CNN architectures [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25, p.28]:\n\n* **In the main study:** VGG16 achieved the highest test accuracy of **98.18%** for the three-class classification task (Normal, Benign, Malignant), outperforming the other evaluated CNN architectures: MobileNetV2 (93.64%), ResNet50 (93.33%), and InceptionV3 (88.79%) [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.25].\n* **Compared to basic/traditional CNNs:** Literature cited in the paper confirms that VGG16 outperforms basic or traditional CNN models in terms of learning efficiency, feature extraction capabilities, and overall diagnostic accuracy [AI-Powered Lung Cancer Detection- Assessing VGG16 and CNN Architectures for CT Scan Image Classification.pdf, p.3]."
+    }
+  ]
+}

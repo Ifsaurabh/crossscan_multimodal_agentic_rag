@@ -2,6 +2,7 @@ from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, END
 
+import langfuse_client
 import query_guardrail
 import query_cache
 import agent_transform_route
@@ -42,6 +43,7 @@ class GraphState(TypedDict):
     sub_queries: list
     final_answer: Optional[str]
     guardrail_flags: list
+    injection_score: Optional[float]  # Prompt Guard score of the query (None: model off/unavailable or regex already blocked)
     history: str
     notes: str
     use_cache: bool  # False for evaluation runs: never read or write the answer cache
@@ -70,8 +72,18 @@ def node_input_guardrail(state: GraphState) -> GraphState:
     flags = list(state.get("guardrail_flags", []))
     if result["medical_advice_detected"]:
         flags.append(query_guardrail.MEDICAL_ADVICE_FLAG)  # detected here, acted on when the answer is returned
+    if result.get("injection_suspected") and not result["blocked"]:
+        flags.append("prompt_injection_suspected")  # the model's flag only annotates; the query is still answered
+    score = result.get("injection_score")
+    if score is not None:
+        # Lets the threshold be tuned from real traffic: filter the Langfuse scores by value.
+        langfuse_client.score_current_trace(
+            "prompt_injection_score", score,
+            comment="flagged" if result.get("injection_suspected") else None,
+        )
     return {
         **state,
+        "injection_score": score,
         "cleaned_query": result["cleaned_query"],
         "blocked": result["blocked"],
         "block_reason": ", ".join(result["reasons"]) if result["blocked"] else None,

@@ -118,3 +118,13 @@ def _no_real_llm_fallbacks(monkeypatch):
     llm_connection.reset_cooldowns()
     yield
     llm_connection.reset_cooldowns()
+
+
+@pytest.fixture(autouse=True)
+def _unit_tests_never_load_prompt_guard(request, monkeypatch):
+    """Unit tests must not download or run the real Prompt Guard model (CI has no HF_TOKEN, and it is
+    hundreds of MB). Its score is stubbed to 0.0; tests of the flag/threshold logic set their own score."""
+    if "unit" in request.path.parts:
+        import query_guardrail
+        monkeypatch.setattr(query_guardrail, "injection_score", lambda text: 0.0)
+    yield

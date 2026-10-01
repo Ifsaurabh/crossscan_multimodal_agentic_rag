@@ -121,6 +121,12 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          # Prompt Guard is a gated model: the token is a BuildKit secret (never in a layer) and the
+          # deploy build refuses to ship an image without the model.
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
+          build-args: |
+            REQUIRE_PROMPT_GUARD=1
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest

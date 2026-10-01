@@ -151,29 +151,61 @@ def score_deepeval(rows: list, model=None) -> None:
             row["metrics"][name] = metric.score
 
 
+def _allow_ragas_import() -> None:
+    """RAGAS 0.4.3 (the latest release) imports ChatVertexAI and VertexAI from langchain_community, which
+    langchain-community 0.4 no longer ships, so `import ragas` raised ModuleNotFoundError. RAGAS only lists
+    those two names among the classes it special-cases; it never builds one here. Inert stand-ins let it
+    import. Harmless once RAGAS is fixed upstream (a real module/attribute is left alone)."""
+    import sys
+    import types
+
+    try:
+        import langchain_community.chat_models.vertexai  # noqa: F401
+    except ImportError:
+        stub = types.ModuleType("langchain_community.chat_models.vertexai")
+        stub.ChatVertexAI = type("ChatVertexAI", (), {})
+        sys.modules["langchain_community.chat_models.vertexai"] = stub
+
+    import langchain_community.llms as community_llms
+
+    if "VertexAI" not in vars(community_llms):
+        try:
+            from langchain_community.llms import VertexAI  # noqa: F401
+        except ImportError:
+            community_llms.VertexAI = type("VertexAI", (), {})
+
+
 def _ragas_llm_for(spec: dict):
     """A native RAGAS LLM for one evaluation-tier model. RAGAS needs a
     provider client (not a text-in/text-out function), so it cannot go through
     llm_connection.generate(); this builds the client for the tier's model."""
     import os
 
+    _allow_ragas_import()
     from ragas.llms import llm_factory
 
     provider, model = spec["provider"], spec["model"]
     api_key = os.environ[spec["config"]["api_key_env"]]
 
+    # RAGAS scores through its ASYNC path (ascore -> agenerate), which refuses a synchronous client
+    # ("Cannot use agenerate() with a synchronous client"), so every client here is an async one.
     if provider == "gemini":
-        from google import genai
+        import openai
 
-        return llm_factory(model, provider="google", client=genai.Client(api_key=api_key))
+        # RAGAS's native Gemini wrapper is a synchronous client (and its source recommends this route):
+        # Google's OpenAI-compatible endpoint, driven by an async OpenAI client, works with its async path.
+        client = openai.AsyncOpenAI(
+            api_key=api_key, base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+        return llm_factory(model, provider="openai", client=client)
     if provider == "openai":
         import openai
 
-        return llm_factory(model, provider="openai", client=openai.OpenAI(api_key=api_key))
+        return llm_factory(model, provider="openai", client=openai.AsyncOpenAI(api_key=api_key))
     if provider == "anthropic":
         import anthropic
 
-        return llm_factory(model, provider="anthropic", client=anthropic.Anthropic(api_key=api_key))
+        return llm_factory(model, provider="anthropic", client=anthropic.AsyncAnthropic(api_key=api_key))
     raise ValueError(f"No RAGAS client for provider '{provider}'.")
 
 
@@ -190,6 +222,7 @@ def score_ragas(rows: list, llm=None) -> None:
     the first ready model scores rows, and if it fails (quota, outage) the
     tier's next model takes over from that row on. A tier never borrows
     another tier's models. `llm` injects a ready RAGAS LLM (tests)."""
+    _allow_ragas_import()
     from ragas.metrics.collections import ContextPrecision, ContextRecall, Faithfulness
 
     if llm is not None:
@@ -243,12 +276,21 @@ def main():
     print(f"Running {len(records)} golden example(s) through the pipeline...")
     rows = run_pipeline(lambda q: invoke_graph(graph, q, use_cache=False), records)
 
-    if args.llm_metrics in ("deepeval", "both"):
-        print("Scoring with DeepEval...")
-        score_deepeval(rows)
-    if args.llm_metrics in ("ragas", "both"):
-        print("Scoring with RAGAS...")
-        score_ragas(rows)
+    # The pipeline run above is the slow, quota-spending part. If a judge cannot score (every model in the
+    # evaluation tier failed), keep the deterministic metrics and still log the run, instead of losing it all.
+    judge_errors = {}
+    for judge, enabled, score in (
+        ("deepeval", args.llm_metrics in ("deepeval", "both"), score_deepeval),
+        ("ragas", args.llm_metrics in ("ragas", "both"), score_ragas),
+    ):
+        if not enabled:
+            continue
+        print(f"Scoring with {judge}...")
+        try:
+            score(rows)
+        except Exception as e:
+            judge_errors[judge] = f"{type(e).__name__}: {str(e)[:300]}"
+            print(f"   ({judge} scoring FAILED, continuing without its metrics: {judge_errors[judge]})")
 
     summary = aggregate(rows)
     for name, value in usage_tracker.delta(usage_before, usage_tracker.snapshot()).items():
@@ -261,6 +303,8 @@ def main():
         params = experiment_tracking.collect_versions(GOLDEN_SET_PATH)
         params["n_examples"] = len(rows)
         params["llm_metrics"] = args.llm_metrics
+        for judge, error in judge_errors.items():
+            params[f"{judge}_error"] = error
         run_id = experiment_tracking.log_run("golden-set-eval", params, summary, rows)
         print(f"\nLogged MLflow run {run_id} (view: mlflow ui --backend-store-uri {experiment_tracking.MLRUNS_DIR.as_uri()})")
 
