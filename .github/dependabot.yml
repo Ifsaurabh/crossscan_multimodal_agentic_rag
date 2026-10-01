@@ -10,6 +10,13 @@ updates:
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+    # These two are pinned TOGETHER on purpose: ragas needs instructor>=1.9 (for Gemini), but every
+    # instructor release newer than 1.12 needs openai 3.x, while the app is pinned to openai 1.x.
+    # Bumping either one alone makes pip's resolver fail (that is what the openai 3.19.2 PR did), so
+    # they are moved by hand, together, when ragas supports it.
+    ignore:
+      - dependency-name: "openai"
+      - dependency-name: "instructor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
