@@ -1,7 +1,15 @@
 ---
+title: CrossScan
+emoji: 🔬
+colorFrom: teal
+colorTo: indigo
+sdk: docker
+app_port: 8000
+pinned: false
+license: mit
+---
 
 # CrossScan
-
 An agentic, multimodal RAG project over a corpus of 12 research papers (lung cancer / medical imaging, land cover / remote sensing, and 1 unrelated AI-security paper). This file is a short, part-wise summary of *what* was built and *why*, with measured numbers where they exist.
 
 **Live demo**: https://crossscan-multimodal-agentic-rag-git-807612796446.europe-west1.run.app (sign-in required; open sign-up, 3 messages per day per account).
