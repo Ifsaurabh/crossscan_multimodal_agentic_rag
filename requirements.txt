@@ -26,7 +26,7 @@ fastapi==0.141.1
 uvicorn==0.53.0
 httpx
 streamlit==1.64.0
-openai==1.109.1
+openai==3.19.2
 anthropic==1.7.0
 
 presidio-analyzer==2.2.364
