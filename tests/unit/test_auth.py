@@ -1,6 +1,6 @@
 import pytest
 
-import auth
+from retrieval import auth
 from fake_db import FakeConn
 
 

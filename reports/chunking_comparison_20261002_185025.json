@@ -1,0 +1,100 @@
+{
+  "stamp": "20261002_185025",
+  "n_papers": 2,
+  "n_golden": 6,
+  "variants": {
+    "A current": {
+      "stats": {
+        "parents": {
+          "n": 26,
+          "mean": 442.2,
+          "median": 272.0,
+          "min": 29,
+          "max": 1568,
+          "under_100": 5
+        },
+        "children": {
+          "n": 48,
+          "mean": 253.5,
+          "median": 269.0,
+          "min": 29,
+          "max": 401,
+          "under_100": 7
+        }
+      }
+    },
+    "B markdown": {
+      "stats": {
+        "parents": {
+          "n": 26,
+          "mean": 445.7,
+          "median": 273.0,
+          "min": 29,
+          "max": 1575,
+          "under_100": 5
+        },
+        "children": {
+          "n": 49,
+          "mean": 250.0,
+          "median": 265,
+          "min": 29,
+          "max": 401,
+          "under_100": 7
+        }
+      }
+    },
+    "B2 markdown, paragraph breaks kept": {
+      "stats": {
+        "parents": {
+          "n": 26,
+          "mean": 442.2,
+          "median": 272.0,
+          "min": 29,
+          "max": 1568,
+          "under_100": 5
+        },
+        "children": {
+          "n": 48,
+          "mean": 253.5,
+          "median": 269.0,
+          "min": 29,
+          "max": 401,
+          "under_100": 7
+        }
+      }
+    }
+  },
+  "heading_levels": {
+    "1-s2.0-S1877050925029461-main.pdf": {
+      "1": 14
+    },
+    "2510.26923v1.pdf": {
+      "1": 15
+    }
+  },
+  "stray_hash_blocks": 0,
+  "ab": {
+    "papers_with_identical_sections": 2,
+    "papers": 2,
+    "sections_a": 26,
+    "sections_b": 26,
+    "children_a": 48,
+    "children_b": 49,
+    "identical_chunk_sets": false,
+    "children_in_both": 44,
+    "paragraph_breaks_a": 137,
+    "paragraph_breaks_b": 0
+  },
+  "ab2": {
+    "papers_with_identical_sections": 2,
+    "papers": 2,
+    "sections_a": 26,
+    "sections_b": 26,
+    "children_a": 48,
+    "children_b": 48,
+    "identical_chunk_sets": true,
+    "children_in_both": 48,
+    "paragraph_breaks_a": 137,
+    "paragraph_breaks_b": 137
+  }
+}

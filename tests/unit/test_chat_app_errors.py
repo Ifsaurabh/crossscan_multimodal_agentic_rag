@@ -10,17 +10,17 @@ import psycopg
 import pytest
 from streamlit.testing.v1 import AppTest
 
-import auth
-import chat_store
-import chatbot
-import db
-import feedback
-import memory
-import online_report
-import quotas
+from retrieval import auth
+from retrieval import chat_store
+from retrieval import chatbot
+from shared import db
+from retrieval import feedback
+from retrieval import memory
+from retrieval import online_report
+from retrieval import quotas
 from fake_db import FakeConn
 
-APP = str(Path(__file__).resolve().parents[2] / "src" / "chat_app.py")
+APP = str(Path(__file__).resolve().parents[2] / "src" / "retrieval" / "chat_app.py")
 USER = {"user_id": "u1", "username": "alice", "role": "user", "is_active": True,
         "daily_request_limit": None, "daily_token_limit": None}
 ADMIN = {**USER, "user_id": "u0", "username": "root", "role": "admin"}
@@ -68,7 +68,7 @@ def healthy(monkeypatch):
     monkeypatch.setattr(online_report, "alerts", lambda report: [])
     monkeypatch.setattr(online_report, "review_queue", lambda conn, days, limit=10: [])
     # the retrieval graph pulls in the embedding models: not needed here
-    monkeypatch.setitem(sys.modules, "retrieval_graph", types.SimpleNamespace(build_graph=lambda: object()))
+    monkeypatch.setitem(sys.modules, "retrieval.retrieval_graph", types.SimpleNamespace(build_graph=lambda: object()))
     return holder
 
 
@@ -154,7 +154,7 @@ def test_a_healthy_page_loads_the_chat_when_signed_in(healthy):
 
 # ---------- a chat turn goes wrong ----------
 
-def test_a_model_or_neo4j_outage_is_a_warning_with_the_not_charged_message(healthy, monkeypatch):
+def test_a_model_outage_is_a_warning_with_the_not_charged_message(healthy, monkeypatch):
     def unavailable(*args, **kwargs):
         raise chatbot.ServiceUnavailable("all language models are busy or out of quota")
 

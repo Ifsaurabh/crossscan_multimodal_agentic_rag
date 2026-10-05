@@ -1,0 +1,100 @@
+# CrossScan INGESTION WORKER image. It runs as a Cloud Run JOB (not a service): it takes the uploaded documents off
+# the Pub/Sub queue one at a time, checks them, and ingests them (see src/ingestion/ingest_worker.py).
+# The chat app has its own image (Dockerfile).
+#
+# Contains src/ingestion/ and src/shared/ only (shared/ is copied whole, as decided). Everything the worker
+# needs is baked in, so a run never downloads anything:
+#   Tesseract + English data   (apt)            OCR for scanned pages
+#   Docling layout and table models              extraction
+#   bge-base, CLIP                               text and image embeddings
+#   Llama Prompt Guard 2 (gated: needs the hf_token build secret, like the app image)
+#   the tiktoken encoding the chunker counts with
+#   Presidio's spaCy model (a wheel in requirements-worker.txt)
+#
+# Built and deployed by GitHub Actions only (.github/workflows/tests.yml, job deploy-worker; pull requests are
+# checked by worker-image-check.yml). Setup: .github/WORKER_DEPLOY_SETUP.md. (A local build, if ever needed:
+# docker build -f Dockerfile.worker --secret id=hf_token,env=HF_TOKEN -t crossscan-ingest-worker .)
+# Settings (env vars or secrets on the job): DATABASE_URL, SCHEMA_NAME, DOCS_BUCKET, DOCS_SUBSCRIPTION,
+# GOOGLE_CLOUD_PROJECT. The worker makes no Gemini calls, so it needs no Gemini key.
+FROM python:3.11-slim-bookworm
+
+WORKDIR /app
+
+# Tesseract with English; libgl1 and libglib2.0-0 are needed by OpenCV (a Docling dependency) on a slim image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app/src \
+    HF_HOME=/opt/hf_cache \
+    TIKTOKEN_CACHE_DIR=/opt/tiktoken_cache \
+    DOCLING_ARTIFACTS_PATH=/opt/docling_models
+
+COPY requirements-worker.txt .
+# CPU-only torch and torchvision first, from PyTorch's own index (the plain Linux wheel carries several GB of
+# CUDA); the requirements install then finds the pinned torch already satisfied. See the app Dockerfile.
+RUN pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN pip install -r requirements-worker.txt
+
+# ---- models, baked in. Only the small config files are copied first, so this slow layer stays cached
+# ---- unless a model name changes.
+# query_guardrail imports langfuse_client, so it must be here too.
+COPY src/shared/__init__.py src/shared/embedding_config.py src/shared/query_guardrail.py src/shared/langfuse_client.py ./src/shared/
+COPY src/ingestion/__init__.py src/ingestion/chunking_config.py ./src/ingestion/
+
+# bge-base, CLIP (public) and the tokenizer encoding the chunker counts with.
+RUN cd src && python -c "\
+import tiktoken; \
+from sentence_transformers import SentenceTransformer; \
+from transformers import CLIPModel, CLIPProcessor; \
+from shared.embedding_config import TEXT_MODEL_NAME, IMAGE_MODEL_NAME; \
+from ingestion.chunking_config import TOKENIZER_ENCODING; \
+SentenceTransformer(TEXT_MODEL_NAME); CLIPModel.from_pretrained(IMAGE_MODEL_NAME); CLIPProcessor.from_pretrained(IMAGE_MODEL_NAME); \
+tiktoken.get_encoding(TOKENIZER_ENCODING); \
+print('baked:', TEXT_MODEL_NAME, IMAGE_MODEL_NAME, TOKENIZER_ENCODING)"
+
+# Docling's layout and table-structure models go to DOCLING_ARTIFACTS_PATH (Docling reads that folder instead of the
+# Hub). The code/formula, picture-classifier and RapidOCR models are not baked: the worker switches those features
+# off, and OCR is Tesseract.
+RUN python -c "\
+from pathlib import Path; \
+from docling.utils.model_downloader import download_models; \
+download_models(output_dir=Path('/opt/docling_models'), with_layout=True, with_tableformer=True, \
+                with_code_formula=False, with_picture_classifier=False, with_rapidocr=False); \
+print('baked: docling layout and table models')"
+
+# Llama Prompt Guard 2 is GATED: a Hugging Face token whose account accepted the licence arrives as a BuildKit secret,
+# mounted for this one step and never stored in a layer. Unlike the app image, the worker REQUIRES it when
+# REQUIRE_PROMPT_GUARD=1 (the deploy build): without it every document would be ingested with injection
+# flagging silently off.
+ARG REQUIRE_PROMPT_GUARD=0
+RUN --mount=type=secret,id=hf_token \
+    if [ -s /run/secrets/hf_token ]; then \
+        cd src && HF_TOKEN="$(cat /run/secrets/hf_token)" python -c "\
+from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
+from shared.query_guardrail import PROMPT_GUARD_MODEL; \
+AutoTokenizer.from_pretrained(PROMPT_GUARD_MODEL); AutoModelForSequenceClassification.from_pretrained(PROMPT_GUARD_MODEL); \
+print('baked:', PROMPT_GUARD_MODEL)"; \
+    elif [ "$REQUIRE_PROMPT_GUARD" = "1" ]; then \
+        echo "ERROR: no hf_token build secret, and this build requires Prompt Guard" >&2; exit 1; \
+    else \
+        echo "WARNING: no hf_token build secret - Prompt Guard NOT baked into this image"; \
+    fi
+
+# From here on the Hub is never contacted: a missing model fails fast instead of downloading.
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
+
+COPY src/shared ./src/shared
+COPY src/ingestion ./src/ingestion
+
+# The build proves everything loads offline: Tesseract and its English data, the tokenizer, both embedding
+# models, Presidio, Docling on a one-page PDF, and (when it was baked) Prompt Guard.
+RUN python -m ingestion.image_check --tesseract $( [ "$REQUIRE_PROMPT_GUARD" = "1" ] && echo --require-prompt-guard )
+
+# One run handles everything queued, then exits (two empty pulls in a row end it). Cloud Run starts a new run per
+# trigger; an execution that does not get the lease row exits at once, so two never work together.
+CMD ["python", "-m", "ingestion.ingest_worker", "--run"]

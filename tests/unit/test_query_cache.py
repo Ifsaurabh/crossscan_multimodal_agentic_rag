@@ -1,4 +1,4 @@
-import query_cache as qc
+from retrieval import query_cache as qc
 
 
 def test_hash_query_is_deterministic_and_case_insensitive():
@@ -16,12 +16,14 @@ def test_hash_query_differs_for_different_queries():
 class FakeConnection:
     def __init__(self):
         self.store = {}
+        self.sources = {}
         self.committed = False
 
     def execute(self, sql, params=None):
         if "INSERT INTO" in sql:
-            query_hash, query_text, chunks_json, answer = params
+            query_hash, query_text, chunks_json, answer, sources = params
             self.store[query_hash] = (chunks_json, answer)
+            self.sources[query_hash] = sources
             return self
         if "SELECT" in sql:
             query_hash = params[0]
@@ -53,3 +55,23 @@ def test_get_cached_returns_none_for_unseen_query():
     conn = FakeConnection()
     result = qc.get_cached(conn, "Never asked before")
     assert result is None
+
+
+def test_the_documents_an_answer_was_built_from_are_stored_with_it():
+    conn = FakeConnection()
+    chunks = [{"chunk_id": "c1", "source_pdf": "lung-cancer/b.pdf"}, {"chunk_id": "c2", "source_pdf": "land-cover/a.pdf"},
+              {"chunk_id": "c3", "source_pdf": "lung-cancer/b.pdf"}, {"chunk_id": "c4"}]
+
+    qc.write_cache(conn, "What accuracy?", chunks, "98%")
+
+    assert conn.sources[qc.hash_query("What accuracy?")] == ["land-cover/a.pdf", "lung-cancer/b.pdf"]  # distinct, sorted
+
+
+def test_sources_of_handles_no_chunks_and_odd_entries():
+    assert qc.sources_of([]) == [] and qc.sources_of(None) == [] and qc.sources_of(["x", {"source_pdf": ""}]) == []
+
+
+def test_the_setup_adds_the_column_and_its_index_without_dropping_anything():
+    sql = qc.setup_sql("it_x")
+    assert "ADD COLUMN IF NOT EXISTS sources TEXT[]" in sql and "USING gin (sources)" in sql
+    assert "DROP" not in sql.upper()

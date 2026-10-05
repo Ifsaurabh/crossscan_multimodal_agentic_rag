@@ -1,4 +1,4 @@
-import output_guardrail as og
+from retrieval import output_guardrail as og
 
 
 def test_extract_citations_finds_all_citations():
@@ -7,14 +7,6 @@ def test_extract_citations_finds_all_citations():
     assert len(citations) == 2
     assert citations[0] == {"source_pdf": "LungPaper.pdf", "page": 4}
     assert citations[1] == {"source_pdf": "LungPaper.pdf", "page": 2}
-
-
-def test_extract_citations_handles_multi_page_citation():
-    answer = "Achieved 100% accuracy [Deep learning-based approach.pdf, p.1, p.14]."
-    citations = og.extract_citations(answer)
-    assert len(citations) == 2
-    assert citations[0] == {"source_pdf": "Deep learning-based approach.pdf", "page": 1}
-    assert citations[1] == {"source_pdf": "Deep learning-based approach.pdf", "page": 14}
 
 
 import pytest

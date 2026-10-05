@@ -10,16 +10,16 @@ Run:  python -m pytest tests/integration --run-integration
 import numpy as np
 import pytest
 
-import auth
-import chat_store
-import chatbot
+from retrieval import auth
+from retrieval import chat_store
+from retrieval import chatbot
 import factories
-import feedback
-import memory
-import online_eval
-import online_report
-import quotas
-from chat_store import SessionNotFound
+from retrieval import feedback
+from retrieval import memory
+from retrieval import online_eval
+from retrieval import online_report
+from retrieval import quotas
+from retrieval.chat_store import SessionNotFound
 
 pytestmark = pytest.mark.integration
 
@@ -46,7 +46,8 @@ def test_all_app_tables_exist(conn, schema):
         "SELECT table_name FROM information_schema.tables WHERE table_schema = %s", (schema,)
     ).fetchall()
 
-    assert {r[0] for r in rows} == APP_TABLES
+    # at least these: other tests of the same run add their own tables (the cache, the worker lease) to the schema
+    assert {r[0] for r in rows} >= APP_TABLES | {"limit_events"}
 
 
 # ---------- auth ----------
@@ -331,10 +332,10 @@ def test_a_chat_turn_is_stored_redacted_carries_history_and_is_metered(conn, mak
     first = chatbot.handle_message(user, None, f"Email me at {address} about CNNs", conn=conn, invoke=fake_invoke)
     stored = [m["content"] for m in chat_store.get_messages(conn, user["user_id"], first["session_id"])]
     assert len(stored) == 2 and all(address not in text for text in stored)
-    assert seen[0]["history"] == ""
+    assert seen[0]["history"] == {}
 
     second = chatbot.handle_message(user, first["session_id"], "and its accuracy?", conn=conn, invoke=fake_invoke)
-    assert "Recent turns:" in seen[1]["history"] and "CNNs" in seen[1]["history"]
+    assert any("CNNs" in turn["text"] for turn in seen[1]["history"]["recent_turns"])
     assert second["session_id"] == first["session_id"]
     assert quotas.get_usage_today(conn, user["user_id"])["requests"] == 2
 
@@ -497,7 +498,7 @@ def test_a_null_faithfulness_alone_does_not_hide_a_low_relevance_answer(conn, ma
 
 
 def test_a_chat_turn_stores_health_metadata_and_a_sampled_answer_is_judged(conn, make_user, faker, schema, monkeypatch):
-    import db
+    from shared import db
 
     monkeypatch.setenv("GLOBAL_DAILY_REQUEST_CAP", "100")
     monkeypatch.setattr(quotas, "rate_limiter", quotas.RateLimiter(limit=100))
@@ -529,3 +530,49 @@ def test_a_chat_turn_stores_health_metadata_and_a_sampled_answer_is_judged(conn,
     assert judged == ["CNN accuracy?"]
     assert online_report.summary(conn, days=1)["judged_answers"] == 1
     assert feedback.get_ratings(conn, user["user_id"], [reply["message_id"]]) == {}
+
+
+# ---------- the limits kept in Postgres (shared by every instance) ----------
+
+def test_the_event_log_in_postgres_counts_refuses_refunds_and_forgets(conn):
+    from retrieval.event_log import PgEventLog
+
+    log = PgEventLog()
+    now = 1_000_000.0
+
+    assert log.try_add("rate", "u1", 2, now - 60, now, conn) == (True, None)
+    assert log.try_add("rate", "u1", 2, now - 60, now + 1, conn) == (True, None)
+    allowed, oldest = log.try_add("rate", "u1", 2, now - 60, now + 2, conn)
+    assert allowed is False and oldest == now                                   # the third is refused, the oldest is reported
+    assert log.try_add("rate", "u2", 2, now - 60, now + 2, conn)[0] is True     # keys are independent
+
+    log.remove_latest("rate", "u1", conn)                                       # a refund
+    assert log.count("rate", "u1", now - 60, conn)[0] == 1
+    assert log.try_add("rate", "u1", 2, now - 60, now + 3, conn)[0] is True
+
+    assert log.try_add("rate", "u1", 2, now + 100 - 60, now + 100, conn)[0] is True   # a minute later the old events are gone
+    assert log.count("rate", "u1", now + 100 - 60, conn)[0] == 1
+
+    log.clear("rate", "u1", conn)
+    assert log.count("rate", "u1", 0, conn) == (0, None)
+
+
+def test_the_per_minute_limit_and_the_lockout_work_through_postgres(conn, make_user):
+    from retrieval.event_log import PgEventLog
+
+    user = make_user()
+    limiter = quotas.RateLimiter(limit=1, log=PgEventLog())
+    assert limiter.allow(user["user_id"], conn=conn)[0] is True
+    assert limiter.allow(user["user_id"], conn=conn)[0] is False
+    limiter.refund(user["user_id"], conn=conn)
+    assert limiter.allow(user["user_id"], conn=conn)[0] is True
+
+    name = user["username"]
+    auth.clear_failed_logins(name, conn)
+    for _ in range(auth.MAX_FAILED_LOGINS):
+        with pytest.raises(auth.AuthError):
+            auth.authenticate(conn, name, "the wrong password")
+    with pytest.raises(auth.LockedOut):
+        auth.authenticate(conn, name, user["password"])
+    auth.clear_failed_logins(name, conn)
+    assert auth.authenticate(conn, name, user["password"])

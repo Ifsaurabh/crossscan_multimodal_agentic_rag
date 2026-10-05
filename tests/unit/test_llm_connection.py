@@ -3,8 +3,8 @@ import types
 
 import pytest
 
-import llm_connection as lc
-import usage_tracker
+from shared import llm_connection as lc
+from shared import usage_tracker
 
 
 class HttpError(Exception):
@@ -73,10 +73,19 @@ def test_default_tiers_are_the_agreed_google_only_flash_models():
             {"provider": "gemini", "model": "gemini-3.7-flash"},
         ],
         "evaluation": [
-            {"provider": "gemini", "model": "gemini-3.7-flash"},
             {"provider": "gemini", "model": "gemini-3.5-flash"},
+            {"provider": "gemini", "model": "gemini-3.5-flash-lite"},
         ],
     }
+
+
+def test_the_reasoning_and_evaluation_tiers_share_no_model():
+    """The planner and the quality check now run on the reasoning tier for every question, so the judges
+    must not draw on the same model quota."""
+    reasoning = {m["model"] for m in lc.TIERS["reasoning"]}
+    evaluation = {m["model"] for m in lc.TIERS["evaluation"]}
+
+    assert reasoning.isdisjoint(evaluation)
 
 
 def test_every_tier_has_a_primary_and_a_fallback_and_only_google_is_used():
@@ -87,15 +96,13 @@ def test_every_tier_has_a_primary_and_a_fallback_and_only_google_is_used():
 
 def test_default_task_to_tier_table():
     assert lc.TASK_TIERS == {
-        "query_planner": "fast",
-        "quality_check": "fast",
+        "query_planner": "reasoning",
+        "quality_check": "reasoning",
         "general_knowledge": "fast",
         "conversation_summary": "fast",
-        "answer_simple": "fast",
-        "answer_complex": "reasoning",
+        "answer": "fast",
         "deepeval_judge": "evaluation",
         "ragas_judge": "evaluation",
-        "online_judge": "evaluation",
     }
 
 
@@ -139,9 +146,10 @@ def test_validate_rejects_unknown_provider_and_unknown_task_tier(monkeypatch):
 
 def test_resolve_tier_from_tier_or_task():
     assert lc.resolve_tier(tier="reasoning") == "reasoning"
-    assert lc.resolve_tier(task="answer_complex") == "reasoning"
-    assert lc.resolve_tier(task="query_planner") == "fast"
-    assert lc.resolve_tier(tier="fast", task="answer_complex") == "fast"  # explicit tier wins
+    assert lc.resolve_tier(task="query_planner") == "reasoning"
+    assert lc.resolve_tier(task="quality_check") == "reasoning"
+    assert lc.resolve_tier(task="answer") == "fast"
+    assert lc.resolve_tier(tier="fast", task="query_planner") == "fast"  # explicit tier wins
 
 
 def test_resolve_tier_rejects_unknown_and_missing():
@@ -170,8 +178,8 @@ def test_primary_of_the_requested_tier_answers(monkeypatch, keys):
 def test_a_task_uses_its_tiers_models(monkeypatch, keys):
     rec = Recorder(monkeypatch, {})
 
-    lc.generate("s", "q", task="answer_complex")
-    lc.generate("s", "q", task="quality_check")
+    lc.generate("s", "q", task="query_planner")
+    lc.generate("s", "q", task="answer")
     lc.generate("s", "q", task="deepeval_judge")
 
     assert rec.models_called() == [REASONING_PRIMARY, FAST_PRIMARY, EVAL_PRIMARY]
@@ -200,17 +208,19 @@ def test_a_failed_model_is_skipped_during_its_cooldown(monkeypatch, keys):
 
 
 def test_cooldown_is_per_model_and_shared_by_every_tier_that_lists_that_model(monkeypatch, keys):
-    # gemini-3.7-flash is reasoning's fallback AND evaluation's primary.
-    assert REASONING_FALLBACK == EVAL_PRIMARY
-    rec = Recorder(monkeypatch, {REASONING_PRIMARY: HttpError(503), REASONING_FALLBACK: HttpError(429)})
+    # gemini-3.5-flash-lite is the fast tier's fallback AND the evaluation tier's fallback.
+    assert FAST_FALLBACK == EVAL_FALLBACK
+    rec = Recorder(monkeypatch, {FAST_PRIMARY: HttpError(503), FAST_FALLBACK: HttpError(429), EVAL_PRIMARY: HttpError(503)})
 
     with pytest.raises(lc.AllProvidersFailed):
-        lc.generate("s", "q", tier="reasoning")
-    result = lc.generate("s", "q", tier="evaluation")
+        lc.generate("s", "q", tier="fast")
+    with pytest.raises(lc.AllProvidersFailed) as failed:
+        lc.generate("s", "q", tier="evaluation")
 
-    assert result.model == EVAL_FALLBACK  # the shared model is still on cooldown
-    assert result.attempts[0]["model"] == EVAL_PRIMARY and result.attempts[0]["status"] == "skipped"
-    assert rec.models_called().count(EVAL_PRIMARY) == 1  # only the earlier reasoning attempt
+    last = failed.value.attempts[-1]
+    assert last["model"] == EVAL_FALLBACK and last["status"] == "skipped"  # the shared model is still on cooldown
+    assert "cooling down" in last["detail"]
+    assert rec.models_called().count(FAST_FALLBACK) == 1  # only the earlier fast-tier attempt
 
 
 def test_a_tier_never_spills_into_another_tier(monkeypatch, keys):
@@ -294,7 +304,7 @@ def test_the_retry_budget_never_changes_the_shared_provider_settings(monkeypatch
 
 
 def test_the_gemini_adapter_passes_its_retry_budget_on(monkeypatch):
-    import gemini_retry
+    from shared import gemini_retry
 
     seen = {}
     monkeypatch.setattr(
@@ -437,7 +447,7 @@ def test_config_snapshot_lists_each_tiers_models_in_order():
     snapshot = lc.config_snapshot()
     assert snapshot["llm_tier_fast"] == "gemini:gemini-3.6-flash,gemini:gemini-3.5-flash-lite"
     assert snapshot["llm_tier_reasoning"] == "gemini:gemini-3.8-flash,gemini:gemini-3.7-flash"
-    assert snapshot["llm_tier_evaluation"] == "gemini:gemini-3.7-flash,gemini:gemini-3.5-flash"
+    assert snapshot["llm_tier_evaluation"] == "gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite"
 
 
 # ---------- real adapters against fake SDKs / clients ----------
@@ -466,9 +476,8 @@ CONFIG = lc.PROVIDERS
 
 
 def test_gemini_adapter_uses_the_tier_model_and_inlines_the_system_instruction():
-    import gemini_retry
+    from shared import gemini_retry
 
-    gemini_retry._cache_registry.clear()
     client = FakeGeminiClient("  answer  ")
 
     result = lc._call_gemini(CONFIG["gemini"], "gemini-3.8-flash", "the system", "the user", client=client)
@@ -494,9 +503,8 @@ def test_gemini_adapter_empty_text_raises_empty_response():
 
 def test_gemini_calls_are_not_double_counted_in_usage():
     """gemini_retry records Gemini usage itself; the adapter must not add it again."""
-    import gemini_retry
+    from shared import gemini_retry
 
-    gemini_retry._cache_registry.clear()
     lc._call_gemini(CONFIG["gemini"], "gemini-3.7-flash", "", "p", client=FakeGeminiClient("ok"))
 
     snapshot = usage_tracker.snapshot()

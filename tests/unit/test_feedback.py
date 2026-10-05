@@ -1,7 +1,7 @@
 import pytest
 
 import factories
-import feedback
+from retrieval import feedback
 from fake_db import FakeConn
 
 

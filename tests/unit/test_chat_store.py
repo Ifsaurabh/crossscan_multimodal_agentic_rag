@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-import chat_store
+from retrieval import chat_store
 from fake_db import FakeConn
 
 SESSION_ROW = ("s1", "A title", None, 0, "created", "updated")

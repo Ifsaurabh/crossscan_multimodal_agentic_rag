@@ -21,13 +21,13 @@ os.environ["ONLINE_EVAL_SAMPLE_RATE"] = "0"
 # ---------- test kinds (folders = what a test NEEDS; CI decides WHEN it runs) ----------
 #   tests/unit/         nothing external, everything faked         always runs
 #   tests/integration/  the REAL Postgres, in a throwaway schema   opt-in: --run-integration
-#   tests/live/         REAL Gemini / Neo4j / full pipeline        opt-in: --run-live (spends quota)
+#   tests/live/         REAL Gemini / full pipeline        opt-in: --run-live (spends quota)
 # Opt-in tests are skipped unless asked, by flag or by environment variable
 # (RUN_INTEGRATION=1 / RUN_LIVE=1).
 
 OPT_IN_KINDS = {
     "integration": ("--run-integration", "RUN_INTEGRATION", "uses the real Postgres"),
-    "live": ("--run-live", "RUN_LIVE", "uses real Gemini/Neo4j and spends quota"),
+    "live": ("--run-live", "RUN_LIVE", "uses real Gemini and spends quota"),
 }
 
 
@@ -41,7 +41,7 @@ def pytest_configure(config):
         "markers", "integration: uses the real Postgres in a throwaway schema; opt-in via --run-integration",
     )
     config.addinivalue_line(
-        "markers", "live: uses real Gemini/Neo4j and spends quota; opt-in via --run-live",
+        "markers", "live: uses real Gemini and spends quota; opt-in via --run-live",
     )
 
 
@@ -85,7 +85,7 @@ def _blocked(service: str):
 
 @pytest.fixture(autouse=True)
 def _block_real_services(request, monkeypatch):
-    """Postgres, Neo4j and Gemini are off-limits to unit tests. A test that
+    """Postgres and Gemini are off-limits to unit tests. A test that
     forgets to fake one fails loudly instead of quietly hitting a real service
     (and, for Gemini, spending quota). Tests that DO fake them just override
     these patches. Integration and live tests are exempt."""
@@ -93,12 +93,10 @@ def _block_real_services(request, monkeypatch):
         yield
         return
 
-    import neo4j
     import psycopg
     from google import genai
 
     monkeypatch.setattr(psycopg, "connect", _blocked("Postgres"))
-    monkeypatch.setattr(neo4j.GraphDatabase, "driver", _blocked("Neo4j"))
     monkeypatch.setattr(genai, "Client", _blocked("Gemini API"))
     yield
 
@@ -108,7 +106,7 @@ def _no_real_llm_fallbacks(monkeypatch):
     """The Anthropic/OpenAI fallbacks must never make real (billed) calls from
     a unit test, even when their keys are present in .env. Tests that exercise
     llm_connection replace these adapters themselves."""
-    import llm_connection
+    from shared import llm_connection
 
     def blocked(*args, **kwargs):
         raise llm_connection.ProviderUnavailable("real fallback providers are blocked in unit tests")
@@ -125,6 +123,22 @@ def _unit_tests_never_load_prompt_guard(request, monkeypatch):
     """Unit tests must not download or run the real Prompt Guard model (CI has no HF_TOKEN, and it is
     hundreds of MB). Its score is stubbed to 0.0; tests of the flag/threshold logic set their own score."""
     if "unit" in request.path.parts:
-        import query_guardrail
+        from shared import query_guardrail
         monkeypatch.setattr(query_guardrail, "injection_score", lambda text: 0.0)
+        monkeypatch.setattr(query_guardrail, "injection_scores", lambda texts, **k: [0.0] * len(texts))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _unit_tests_keep_the_limits_in_memory(request, monkeypatch):
+    """The per-minute rate limit, the daily sign-up cap and the login lockout live in Postgres in the app. A unit test gets
+    fresh in-memory ones (the same code, a different store); the Postgres store is tested in tests/integration."""
+    if "unit" in request.path.parts:
+        from retrieval import auth, quotas
+        from retrieval.event_log import MemoryEventLog
+
+        monkeypatch.setattr(quotas, "rate_limiter", quotas.RateLimiter(log=MemoryEventLog()))
+        monkeypatch.setattr(quotas, "registration_limiter", quotas.RateLimiter(
+            limit=quotas.DEFAULT_REGISTRATIONS_PER_DAY, window_seconds=86400.0, log=MemoryEventLog(), bucket="registration", daily=True))
+        monkeypatch.setattr(auth, "failed_logins", MemoryEventLog())
     yield

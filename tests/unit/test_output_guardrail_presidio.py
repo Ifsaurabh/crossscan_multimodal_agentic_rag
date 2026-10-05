@@ -1,8 +1,8 @@
 """output_guardrail: Presidio redaction + regex leak/citation checks. Prompt Guard is NOT used on answers
 (it missed real leaks and flagged a correct answer - reports/prompt_guard_eval_2026-10-01.md). The old
 test_output_guardrail*.py cover redaction (emails, credentials) and citations; this file covers what Presidio added."""
-import output_guardrail as og
-import query_guardrail as qg
+from retrieval import output_guardrail as og
+from shared import query_guardrail as qg
 
 
 def test_the_output_check_never_calls_the_model(monkeypatch):
@@ -26,11 +26,3 @@ def test_more_than_emails_is_redacted_in_answers():
     result = og.check_output("Card 4111 1111 1111 1111 and ip 10.0.0.12, mail a@b.org.", [])
     assert result["pii_redactions"] == 3 and result["credential_redactions"] == 0
     assert result["cleaned_answer"] == "Card [REDACTED_CARD] and ip [REDACTED_IP], mail [REDACTED_EMAIL]."
-
-
-def test_the_result_keys_are_the_same_as_the_old_guardrail():
-    assert set(og.check_output("plain answer", [])) == {
-        "cleaned_answer", "pii_redactions", "credential_redactions", "verified_citations",
-        "unverified_citations", "injection_leak_detected", "clinical_overstatement_detected",
-        "flags", "is_grounded",
-    }

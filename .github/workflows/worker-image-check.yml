@@ -1,0 +1,61 @@
+name: Worker image check (pull requests)
+
+# Builds the INGESTION WORKER image (Dockerfile.worker) so a broken Dockerfile, a missing model or a bad change to
+# requirements-worker.txt is found in the pull request, not when the job is deployed. Nothing is pushed anywhere.
+# The build itself runs `python -m ingestion.image_check`, which loads Tesseract, the tokenizer, both embedding
+# models, Presidio, Docling and (with the token) Prompt Guard. The app image has its own check: docker-build.yml.
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "Dockerfile.worker"
+      - "Dockerfile.worker.dockerignore"
+      - "requirements-worker.txt"
+      - "src/shared/**"
+      - "src/ingestion/**"
+      - ".github/workflows/worker-image-check.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (the image is several GB and Docker needs room to build it)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the worker image (the build runs the model and tool checks)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          push: false
+          load: true
+          # Empty on pull requests from forks and Dependabot: the build then skips Prompt Guard with a warning.
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
+          tags: crossscan-worker:ci
+
+      - name: Run the checks again with NO network (a run must never download anything)
+        run: docker run --rm --network none crossscan-worker:ci python -m ingestion.image_check --tesseract
+
+      - name: The container must never try to reach the model hub
+        run: docker run --rm crossscan-worker:ci sh -c 'test "$HF_HUB_OFFLINE" = "1" && test "$TRANSFORMERS_OFFLINE" = "1"'
+
+      - name: The worker starts and shows its help (entry point and imports are intact)
+        run: docker run --rm crossscan-worker:ci python -m ingestion.ingest_worker --help

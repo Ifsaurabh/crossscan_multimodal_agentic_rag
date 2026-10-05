@@ -1,7 +1,7 @@
 """Realistic fake data for tests, built on Faker.
 
 Faker supplies the VALUES (people, emails, sentences); the tests still fake
-the BEHAVIOUR of services (Gemini, Postgres, Neo4j) with stand-ins. The seed is
+the BEHAVIOUR of services (Gemini, Postgres) with stand-ins. The seed is
 fixed in conftest.py (`faker_seed`), so every run produces the same data and a
 failure is always reproducible.
 

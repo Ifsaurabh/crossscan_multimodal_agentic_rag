@@ -1,6 +1,6 @@
 import pytest
 
-import db
+from shared import db
 
 
 class FakeConnection:
@@ -143,7 +143,7 @@ def test_the_pool_is_built_once_opened_and_shared():
 def test_the_pool_uses_the_documented_defaults():
     kwargs = db.get_pool().kwargs
 
-    assert (kwargs["min_size"], kwargs["max_size"], kwargs["timeout"]) == (2, 8, 15.0)
+    assert (kwargs["min_size"], kwargs["max_size"], kwargs["timeout"]) == (2, 33, 15.0)
     assert kwargs["conninfo"] == "postgresql://fake/db"
     assert kwargs["kwargs"] == {"connect_timeout": db.CONNECT_TIMEOUT_SECONDS}
 

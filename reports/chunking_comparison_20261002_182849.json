@@ -1,0 +1,272 @@
+{
+  "stamp": "20261002_182849",
+  "n_papers": 2,
+  "n_golden": 6,
+  "variants": {
+    "A current": {
+      "stats": {
+        "parents": {
+          "n": 26,
+          "mean": 442.2,
+          "median": 272.0,
+          "min": 29,
+          "max": 1568,
+          "under_100": 5
+        },
+        "children": {
+          "n": 48,
+          "mean": 253.5,
+          "median": 269.0,
+          "min": 29,
+          "max": 401,
+          "under_100": 7
+        }
+      },
+      "eval": {
+        "n_questions": 6,
+        "embed_seconds": 55.5,
+        "source_hit": 1.0,
+        "child_coverage": 0.499,
+        "parent_coverage": 0.844,
+        "context_tokens": 2578,
+        "rows": [
+          {
+            "question": "Did the Cropped Image CapsNet trained on cropped images perform better than the one trained on full CT/PET images?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.24772162386081192,
+            "parent_cov": 1.0,
+            "context_tokens": 3909
+          },
+          {
+            "question": "What performance improvements did the proposed Scale-Adaptive Curriculum Learning (SACL) method achieve over baseline methods?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.06261859582542695,
+            "parent_cov": 0.06261859582542695,
+            "context_tokens": 1577
+          },
+          {
+            "question": "Why was the CapsNet in the YOLO-CapsNet hybrid limited to 128 x 128 pixel inputs, and what did that mean for its architecture?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.4480651731160896,
+            "parent_cov": 1.0,
+            "context_tokens": 3737
+          },
+          {
+            "question": "What are the three stages of the proposed YOLOv11 + CapsNet pipeline, and what datasets were used?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.24393358876117496,
+            "parent_cov": 1.0,
+            "context_tokens": 3123
+          },
+          {
+            "question": "With only 10% of the training data, how did SACL compare with the baseline and static curriculum learning on mAP50?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.9920948616600791,
+            "parent_cov": 1.0,
+            "context_tokens": 1321
+          },
+          {
+            "question": "How is the complexity score of a CT slice built in the static curriculum, and how do the three training stages differ in image size?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 1.0,
+            "parent_cov": 1.0,
+            "context_tokens": 1799
+          }
+        ]
+      }
+    },
+    "B markdown": {
+      "stats": {
+        "parents": {
+          "n": 26,
+          "mean": 445.7,
+          "median": 273.0,
+          "min": 29,
+          "max": 1575,
+          "under_100": 5
+        },
+        "children": {
+          "n": 49,
+          "mean": 250.0,
+          "median": 265,
+          "min": 29,
+          "max": 401,
+          "under_100": 7
+        }
+      },
+      "eval": {
+        "n_questions": 6,
+        "embed_seconds": 54.4,
+        "source_hit": 1.0,
+        "child_coverage": 0.454,
+        "parent_coverage": 0.844,
+        "context_tokens": 2553,
+        "rows": [
+          {
+            "question": "Did the Cropped Image CapsNet trained on cropped images perform better than the one trained on full CT/PET images?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.24772162386081192,
+            "parent_cov": 1.0,
+            "context_tokens": 3927
+          },
+          {
+            "question": "What performance improvements did the proposed Scale-Adaptive Curriculum Learning (SACL) method achieve over baseline methods?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.06261859582542695,
+            "parent_cov": 0.06261859582542695,
+            "context_tokens": 1348
+          },
+          {
+            "question": "Why was the CapsNet in the YOLO-CapsNet hybrid limited to 128 x 128 pixel inputs, and what did that mean for its architecture?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.4480651731160896,
+            "parent_cov": 1.0,
+            "context_tokens": 3761
+          },
+          {
+            "question": "What are the three stages of the proposed YOLOv11 + CapsNet pipeline, and what datasets were used?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.24393358876117496,
+            "parent_cov": 1.0,
+            "context_tokens": 3143
+          },
+          {
+            "question": "With only 10% of the training data, how did SACL compare with the baseline and static curriculum learning on mAP50?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.7193675889328063,
+            "parent_cov": 1.0,
+            "context_tokens": 1332
+          },
+          {
+            "question": "How is the complexity score of a CT slice built in the static curriculum, and how do the three training stages differ in image size?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 1.0,
+            "parent_cov": 1.0,
+            "context_tokens": 1809
+          }
+        ]
+      }
+    },
+    "C docling": {
+      "stats": {
+        "parents": {
+          "n": 26,
+          "mean": 469.2,
+          "median": 325.0,
+          "min": 29,
+          "max": 1559,
+          "under_100": 5
+        },
+        "children": {
+          "n": 49,
+          "mean": 248.9,
+          "median": 256,
+          "min": 24,
+          "max": 396,
+          "under_100": 7
+        }
+      },
+      "eval": {
+        "n_questions": 6,
+        "embed_seconds": 55.5,
+        "source_hit": 1.0,
+        "child_coverage": 0.442,
+        "parent_coverage": 0.832,
+        "context_tokens": 2474,
+        "rows": [
+          {
+            "question": "Did the Cropped Image CapsNet trained on cropped images perform better than the one trained on full CT/PET images?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.3736536868268434,
+            "parent_cov": 0.9917149958574979,
+            "context_tokens": 3139
+          },
+          {
+            "question": "What performance improvements did the proposed Scale-Adaptive Curriculum Learning (SACL) method achieve over baseline methods?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.06261859582542695,
+            "parent_cov": 0.06261859582542695,
+            "context_tokens": 1707
+          },
+          {
+            "question": "Why was the CapsNet in the YOLO-CapsNet hybrid limited to 128 x 128 pixel inputs, and what did that mean for its architecture?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.4378818737270876,
+            "parent_cov": 1.0,
+            "context_tokens": 2820
+          },
+          {
+            "question": "What are the three stages of the proposed YOLOv11 + CapsNet pipeline, and what datasets were used?",
+            "source_pdf": "1-s2.0-S1877050925029461-main.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.1558109833971903,
+            "parent_cov": 0.9897828863346104,
+            "context_tokens": 3921
+          },
+          {
+            "question": "With only 10% of the training data, how did SACL compare with the baseline and static curriculum learning on mAP50?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.6442687747035574,
+            "parent_cov": 0.958498023715415,
+            "context_tokens": 1451
+          },
+          {
+            "question": "How is the complexity score of a CT slice built in the static curriculum, and how do the three training stages differ in image size?",
+            "source_pdf": "2510.26923v1.pdf",
+            "source_hit": 1.0,
+            "child_cov": 0.9791666666666666,
+            "parent_cov": 0.9895833333333334,
+            "context_tokens": 1805
+          }
+        ]
+      }
+    }
+  },
+  "heading_levels": {
+    "1-s2.0-S1877050925029461-main.pdf": {
+      "1": 14
+    },
+    "2510.26923v1.pdf": {
+      "1": 15
+    }
+  },
+  "stray_hash_blocks": 0,
+  "ab": {
+    "papers_with_identical_sections": 2,
+    "papers": 2,
+    "sections_a": 26,
+    "sections_b": 26,
+    "children_a": 48,
+    "children_b": 49,
+    "identical_chunk_sets": false,
+    "children_in_both": 44,
+    "paragraph_breaks_a": 137,
+    "paragraph_breaks_b": 0
+  },
+  "docling_extra": {
+    "conversion_seconds": {
+      "1-s2.0-S1877050925029461-main.pdf": 370.2,
+      "2510.26923v1.pdf": 49.1
+    },
+    "table_chunks_excluded": 4,
+    "references_chunks_excluded": 16,
+    "chunks_total": 69,
+    "chunks_with_page": 49
+  }
+}

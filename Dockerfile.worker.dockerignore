@@ -1,0 +1,10 @@
+# Used only when building Dockerfile.worker (BuildKit picks "<Dockerfile name>.dockerignore" before .dockerignore).
+# The worker image needs requirements-worker.txt, src/shared and src/ingestion, and nothing else, so everything else
+# stays out of the build context: it is smaller and faster to send, and a change in the app or the data never
+# invalidates a worker build.
+*
+!requirements-worker.txt
+!src/shared/
+!src/ingestion/
+**/__pycache__/
+**/*.pyc

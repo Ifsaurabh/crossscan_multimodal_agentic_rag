@@ -1,12 +1,7 @@
 import pytest
 
-import gemini_retry
-import memory
+from retrieval import memory
 from fake_db import FakeConn
-
-
-def setup_function():
-    gemini_retry._cache_registry.clear()
 
 
 def fake_embed(text):
@@ -15,26 +10,59 @@ def fake_embed(text):
 
 # ---------- conversation memory ----------
 
-def test_format_history_summary_and_recent_turns():
-    text = memory.format_history(
+def assistant(text, sources=None):
+    return {"role": "assistant", "content": text, "metadata": {"sources": sources} if sources is not None else None}
+
+
+def test_the_history_has_the_summary_and_the_recent_turns_with_citations_on_assistant_turns():
+    payload = memory.history_payload(
         "Discussed YOLO papers.",
-        [{"role": "user", "content": "which YOLO?"}, {"role": "assistant", "content": "YOLOv8"}],
+        [{"role": "user", "content": "which YOLO?"},
+         assistant("YOLOv8", [{"source_pdf": "lung-cancer/a.pdf", "page": 4}, {"source_pdf": "lung-cancer/a.pdf", "page": 2},
+                              {"source_pdf": "land-cover/b.pdf", "page": 7}])],
     )
 
-    assert "Summary of earlier conversation: Discussed YOLO papers." in text
-    assert "User: which YOLO?" in text
-    assert "Assistant: YOLOv8" in text
+    assert payload == {"summary": "Discussed YOLO papers.", "recent_turns": [
+        {"role": "user", "text": "which YOLO?"},
+        {"role": "assistant", "text": "YOLOv8", "citations": [
+            {"paper": "lung-cancer/a.pdf", "pages": [2, 4]}, {"paper": "land-cover/b.pdf", "pages": [7]}]},
+    ]}
 
 
-def test_format_history_empty_is_empty_string():
-    assert memory.format_history("", []) == ""
-    assert memory.format_history(None, []) == ""
+def test_an_empty_conversation_gives_an_empty_payload_so_the_shared_cache_still_applies():
+    assert memory.history_payload("", []) == {}
+    assert memory.history_payload(None, None) == {}
 
 
-def test_format_history_truncates_long_messages():
-    text = memory.format_history("", [{"role": "assistant", "content": "x" * 5000}])
-    assert len(text) < memory.MAX_HISTORY_MESSAGE_CHARS + 100
-    assert text.endswith("...")
+def test_an_answer_without_sources_has_an_empty_citations_list_so_it_cannot_mean_a_paper():
+    payload = memory.history_payload("", [assistant("A CNN is ...", []), {"role": "assistant", "content": "old", "metadata": None}])
+    assert [t["citations"] for t in payload["recent_turns"]] == [[], []]  # also for messages stored before sources were kept
+
+
+def test_the_citations_come_from_the_stored_sources_not_from_the_cut_text():
+    long_answer = "x" * 5000 + " [lung-cancer/a.pdf, p.4]"
+    turn = memory.history_payload("", [assistant(long_answer, [{"source_pdf": "lung-cancer/a.pdf", "page": 4}])])["recent_turns"][0]
+
+    assert turn["citations"] == [{"paper": "lung-cancer/a.pdf", "pages": [4]}]
+    assert len(turn["text"]) <= memory.MAX_HISTORY_MESSAGE_CHARS + 3 and turn["text"].endswith("...")  # the text is still cut
+
+
+def test_a_source_without_a_page_still_names_its_paper():
+    assert memory.citations_of(assistant("t", [{"source_pdf": "a.pdf", "page": None}])) == [{"paper": "a.pdf", "pages": []}]
+    assert memory.citations_of(assistant("t", [{"page": 3}])) == []
+
+
+def test_a_summary_alone_is_enough_for_a_payload():
+    assert memory.history_payload("Earlier: lung papers.", []) == {"summary": "Earlier: lung papers.", "recent_turns": []}
+
+
+def test_the_summary_call_sees_which_papers_each_answer_cited():
+    client = FakeClient("ok")
+    memory.summarize("", [{"role": "user", "content": "which YOLO?"},
+                          assistant("YOLOv8", [{"source_pdf": "lung-cancer/a.pdf", "page": 4}])], client=client)
+
+    sent = client.models.last_kwargs["contents"]
+    assert "Assistant: YOLOv8 [cited: lung-cancer/a.pdf p.4]" in sent and "User: which YOLO?" in sent and "User: which YOLO? [cited" not in sent
 
 
 def test_split_history_window():
@@ -189,11 +217,6 @@ def test_forget_is_scoped_by_user():
 def test_forget_all_returns_count():
     conn = FakeConn(responses=[("DELETE", [(1,), (2,)])])
     assert memory.forget_all(conn, "u1") == 2
-
-
-def test_format_notes():
-    assert memory.format_notes(["a", "b"]) == "- a\n- b"
-    assert memory.format_notes([]) == ""
 
 
 def test_run_command_remember_memories_forget():

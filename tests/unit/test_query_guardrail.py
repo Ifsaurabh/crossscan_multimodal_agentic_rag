@@ -1,4 +1,4 @@
-import query_guardrail as qg
+from shared import query_guardrail as qg
 
 
 def test_redact_pii_masks_email():

@@ -1,4 +1,4 @@
-import deepeval_gemini_model as dgm
+from shared import deepeval_gemini_model as dgm
 
 
 class FakeResponse:

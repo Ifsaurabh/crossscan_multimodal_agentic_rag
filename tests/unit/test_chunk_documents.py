@@ -1,9 +1,7 @@
-import json
-
 import pytest
 
-import chunk_documents as cd
-import chunking_config as cfg
+from ingestion import chunk_documents as cd
+from ingestion import chunking_config as cfg
 
 TOLERANCE = 5  # the splitter can overshoot a cap by a few tokens (separator / join overhead)
 
@@ -77,54 +75,29 @@ def test_split_text_keeps_unicode_intact():
     assert pieces == [text.strip()]
 
 
-# ---------- chunk_documents (files in, parents + children out) ----------
-
-@pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    guarded, chunks = tmp_path / "guarded", tmp_path / "chunks"
-    guarded.mkdir()
-    monkeypatch.setattr(cd, "GUARDED_DIR", guarded)
-    monkeypatch.setattr(cd, "CHUNKS_DIR", chunks)
-    monkeypatch.setattr(cd, "REPORT_PATH", tmp_path / "chunking_report.json")
-    return tmp_path
-
-
-def write_doc(workspace, stem, sections, source_pdf=None):
-    doc = {"source_pdf": source_pdf or f"{stem}.pdf", "sections": sections}
-    (workspace / "guarded" / f"{stem}.json").write_text(json.dumps(doc), encoding="utf-8")
-
-
-def read_chunks(workspace, stem):
-    return json.loads((workspace / "chunks" / f"{stem}.json").read_text(encoding="utf-8"))
-
-
-def read_report(workspace):
-    return json.loads((workspace / "chunking_report.json").read_text(encoding="utf-8"))
-
+# ---------- chunk_document (sections in, parents + children out) ----------
 
 def section(heading="Introduction", text="First paragraph of intro.\n\nSecond paragraph of intro.", start=1, end=1):
     return {"heading": heading, "text": text, "page_start": start, "page_end": end}
 
 
-def test_chunk_documents_produces_parent_child_structure(workspace):
-    write_doc(workspace, "sample", [section()])
+def chunk(sections, stem="sample", source_pdf=None):
+    return cd.chunk_document(source_pdf or f"{stem}.pdf", sections, stem=stem)
 
-    cd.chunk_documents()
 
-    result = read_chunks(workspace, "sample")
-    assert result["chunking_version"] == cfg.CHUNKING_VERSION
+def test_chunk_document_produces_parent_child_structure():
+    result = chunk([section()])
+
+    assert result["chunking_version"] == cfg.CHUNKING_VERSION and result["source_pdf"] == "sample.pdf"
     assert len(result["parents"]) >= 1
     assert len(result["parents"][0]["children"]) >= 1
     assert result["parents"][0]["section"] == "Introduction"
     assert result["parents"][0]["page_start"] == 1
 
 
-def test_parents_and_children_get_predictable_ids_and_link_to_each_other(workspace):
-    write_doc(workspace, "sample", [section("Intro"), section("Methods", text="Methods text here.", start=2, end=3)])
+def test_parents_and_children_get_predictable_ids_and_link_to_each_other():
+    parents = chunk([section("Intro"), section("Methods", text="Methods text here.", start=2, end=3)])["parents"]
 
-    cd.chunk_documents()
-
-    parents = read_chunks(workspace, "sample")["parents"]
     assert [p["chunk_id"] for p in parents] == ["sample_p1", "sample_p2"]
     assert all(p["chunk_type"] == "parent" for p in parents)
     for parent in parents:
@@ -132,50 +105,40 @@ def test_parents_and_children_get_predictable_ids_and_link_to_each_other(workspa
             assert child["parent_id"] == parent["chunk_id"] and child["chunk_type"] == "child"
 
 
-def test_child_ids_keep_counting_across_the_whole_document(workspace):
-    write_doc(workspace, "sample", [section("A", text="First section."), section("B", text="Second section.")])
+def test_child_ids_keep_counting_across_the_whole_document():
+    parents = chunk([section("A", text="First section."), section("B", text="Second section.")])["parents"]
 
-    cd.chunk_documents()
-
-    children = [c for p in read_chunks(workspace, "sample")["parents"] for c in p["children"]]
+    children = [c for p in parents for c in p["children"]]
     assert [c["chunk_id"] for c in children] == ["sample_c1", "sample_c2"]  # not restarted per parent
 
 
-def test_children_inherit_the_papers_section_and_pages(workspace):
-    write_doc(workspace, "sample", [section("Results", text="Accuracy was high.", start=12, end=14)], source_pdf="Paper One.pdf")
+def test_the_stem_names_the_chunks_and_defaults_to_the_file_name():
+    assert chunk([section()], stem="lung-cancer/paper")["parents"][0]["chunk_id"] == "lung-cancer/paper_p1"
+    assert cd.chunk_document("Paper One.pdf", [section()])["parents"][0]["chunk_id"] == "Paper One_p1"
 
-    cd.chunk_documents()
 
-    child = read_chunks(workspace, "sample")["parents"][0]["children"][0]
+def test_children_inherit_the_papers_section_and_pages():
+    child = chunk([section("Results", text="Accuracy was high.", start=12, end=14)], source_pdf="Paper One.pdf")["parents"][0]["children"][0]
+
     assert (child["source_pdf"], child["section"], child["page_start"], child["page_end"]) == ("Paper One.pdf", "Results", 12, 14)
     assert child["text"] == "Accuracy was high."
 
 
-def test_a_section_without_page_numbers_passes_none_through(workspace):
-    write_doc(workspace, "sample", [{"heading": "Abstract", "text": "Some text."}])
-
-    cd.chunk_documents()
-
-    parent = read_chunks(workspace, "sample")["parents"][0]
+def test_a_section_without_page_numbers_passes_none_through():
+    parent = chunk([{"heading": "Abstract", "text": "Some text."}])["parents"][0]
     assert parent["page_start"] is None and parent["page_end"] is None
 
 
-def test_empty_and_whitespace_only_sections_are_skipped_and_use_no_ids(workspace):
-    write_doc(workspace, "sample", [section("Blank", text=""), section("Spaces", text="  \n\n "), section("Real", text="Real text.")])
-
-    cd.chunk_documents()
-
-    parents = read_chunks(workspace, "sample")["parents"]
+def test_empty_and_whitespace_only_sections_are_skipped_and_use_no_ids():
+    parents = chunk([section("Blank", text=""), section("Spaces", text="  \n\n "), section("Real", text="Real text.")])["parents"]
     assert [p["section"] for p in parents] == ["Real"] and parents[0]["chunk_id"] == "sample_p1"
 
 
-def test_a_long_section_is_split_into_several_capped_parents_and_children(workspace):
+def test_a_long_section_is_split_into_several_capped_parents_and_children():
     long_text = " ".join(f"Sentence {i} discusses lung nodule detection results." for i in range(600))
-    write_doc(workspace, "sample", [section("Results", text=long_text)])
 
-    cd.chunk_documents()
+    parents = chunk([section("Results", text=long_text)])["parents"]
 
-    parents = read_chunks(workspace, "sample")["parents"]
     assert len(parents) > 1
     for parent in parents:
         assert cd.count_tokens(parent["text"]) <= cfg.PARENT_MAX_TOKENS + TOLERANCE
@@ -184,56 +147,5 @@ def test_a_long_section_is_split_into_several_capped_parents_and_children(worksp
             assert cd.count_tokens(child["text"]) <= cfg.CHILD_MAX_TOKENS + TOLERANCE
 
 
-def test_a_document_with_no_sections_writes_an_empty_result_and_a_zero_report(workspace):
-    write_doc(workspace, "empty", [])
-
-    cd.chunk_documents()
-
-    assert read_chunks(workspace, "empty")["parents"] == []
-    entry = read_report(workspace)["documents"][0]
-    assert entry["parent_count"] == 0 and entry["child_count"] == 0
-    assert entry["parent_tokens"] == {"min": 0, "max": 0, "avg": 0}
-
-
-def test_the_report_matches_what_was_written(workspace):
-    write_doc(workspace, "sample", [section("A", text="First section."), section("B", text="Second section, a little longer.")])
-
-    cd.chunk_documents()
-
-    parents = read_chunks(workspace, "sample")["parents"]
-    report = read_report(workspace)
-    entry = report["documents"][0]
-    assert report["chunking_version"] == cfg.CHUNKING_VERSION
-    assert entry["source_pdf"] == "sample.pdf"
-    assert entry["parent_count"] == len(parents)
-    assert entry["child_count"] == sum(len(p["children"]) for p in parents)
-    assert entry["parent_tokens"]["min"] <= entry["parent_tokens"]["avg"] <= entry["parent_tokens"]["max"]
-    assert entry["child_tokens"]["min"] <= entry["child_tokens"]["avg"] <= entry["child_tokens"]["max"]
-
-
-def test_every_guarded_document_is_chunked_in_file_name_order(workspace, capsys):
-    write_doc(workspace, "b_paper", [section()])
-    write_doc(workspace, "a_paper", [section()])
-
-    cd.chunk_documents()
-
-    assert [d["source_pdf"] for d in read_report(workspace)["documents"]] == ["a_paper.pdf", "b_paper.pdf"]
-    assert (workspace / "chunks" / "a_paper.json").exists() and (workspace / "chunks" / "b_paper.json").exists()
-    assert "Found 2 guarded documents" in capsys.readouterr().out
-
-
-def test_the_output_folder_is_created_when_missing_and_a_rerun_overwrites(workspace):
-    write_doc(workspace, "sample", [section(text="Version one.")])
-    cd.chunk_documents()
-    write_doc(workspace, "sample", [section(text="Version two.")])
-
-    cd.chunk_documents()  # the chunks folder did not exist before the first run
-
-    assert read_chunks(workspace, "sample")["parents"][0]["text"] == "Version two."
-
-
-def test_no_guarded_documents_still_writes_an_empty_report(workspace, capsys):
-    cd.chunk_documents()
-
-    assert read_report(workspace)["documents"] == []
-    assert "Found 0 guarded documents" in capsys.readouterr().out
+def test_a_document_with_no_sections_gives_no_parents():
+    assert chunk([])["parents"] == []

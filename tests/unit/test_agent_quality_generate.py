@@ -1,9 +1,6 @@
-import agent_quality_generate as aqg
-import gemini_retry
+import pytest
 
-
-def setup_function():
-    gemini_retry._cache_registry.clear()
+from retrieval import agent_quality_generate as aqg
 
 
 def test_format_context_includes_source_and_page():
@@ -101,11 +98,8 @@ def test_generate_answer_handles_empty_chunks():
     assert answer == "I don't have information on this."
 
 
-def test_answer_task_maps_complexity_to_a_task():
-    assert aqg.answer_task("simple") == "answer_simple"
-    assert aqg.answer_task("complex") == "answer_complex"
-    assert aqg.answer_task(None) == "answer_complex"      # a missing label counts as complex
-    assert aqg.answer_task("whatever") == "answer_complex"  # so does an unrecognised one
+def test_answers_are_written_on_the_answer_task_not_one_chosen_by_complexity():
+    assert not hasattr(aqg, "answer_task")
 
 
 class FakeResult:
@@ -123,14 +117,13 @@ def capture_tasks(monkeypatch):
     return seen
 
 
-def test_generate_answer_uses_the_tier_for_its_complexity(monkeypatch):
+def test_generate_answer_always_runs_on_the_answer_task(monkeypatch):
     seen = capture_tasks(monkeypatch)
 
-    aqg.generate_answer("q", [], complexity="simple")
-    aqg.generate_answer("q", [], complexity="complex")
     aqg.generate_answer("q", [])
+    aqg.generate_answer("q", [{"source_pdf": "a.pdf", "page_start": 1, "text": "x"}], tables=[{"text": "t"}], low_confidence=True)
 
-    assert seen == ["answer_simple", "answer_complex", "answer_complex"]
+    assert seen == ["answer", "answer"]
 
 
 def test_other_agent_calls_use_their_own_tasks(monkeypatch):
@@ -141,3 +134,23 @@ def test_other_agent_calls_use_their_own_tasks(monkeypatch):
     aqg.generate_general_knowledge_answer("what does CNN stand for?")
 
     assert seen == ["quality_check", "general_knowledge"]
+
+
+def test_a_table_is_shown_with_its_caption_and_source():
+    text = aqg.format_context([], tables=[{"source_pdf": "lung-cancer/a.pdf", "page": 4, "caption": "Table 3: recall",
+                                           "text": "| m | r |", "rows_cut": 0}])
+    assert text == "[lung-cancer/a.pdf, p.4] (Table: Table 3: recall)" + chr(10) + "| m | r |"
+
+
+def test_a_table_without_a_caption_is_just_marked_as_a_table():
+    text = aqg.format_context([], tables=[{"source_pdf": "a.pdf", "page": 1, "text": "| m |"}])
+    assert text.startswith("[a.pdf, p.1] (Table)")
+
+
+def test_a_cut_table_says_how_many_rows_were_left_out():
+    text = aqg.format_context([], tables=[{"source_pdf": "a.pdf", "page": 1, "text": "| m |", "rows_cut": 37}])
+    assert text.endswith("[table truncated: 37 more row(s) not shown]")
+
+
+def test_the_answer_prompt_no_longer_mentions_images_that_are_never_listed():
+    assert "images" not in aqg.GENERATE_SYSTEM_INSTRUCTION.lower()

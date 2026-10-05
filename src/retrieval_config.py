@@ -1,8 +1,0 @@
-GEMINI_MODEL = "gemini-3.6-flash"
-RERANKER_MODEL = "BAAI/bge-reranker-base"
-
-MAX_RETRY_ATTEMPTS = 3
-EXPANSION_VARIANTS = 3
-
-VECTOR_TOP_K = 5
-GRAPH_TOP_K = 10

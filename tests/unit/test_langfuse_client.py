@@ -1,4 +1,4 @@
-import langfuse_client as lc
+from shared import langfuse_client as lc
 
 
 def test_disabled_flag_wins_over_keys(monkeypatch):
