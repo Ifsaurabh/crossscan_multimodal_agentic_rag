@@ -113,7 +113,7 @@ jobs:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Let Docker push to Artifact Registry
         run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
@@ -239,7 +239,7 @@ jobs:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
         if: steps.changes.outputs.changed == 'true'
 
       - name: Let Docker push to Artifact Registry
@@ -340,7 +340,7 @@ jobs:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
         if: steps.changes.outputs.changed == 'true'
 
       - name: Deploy the function (it gets its own subscription on the topic, next to the worker's)
