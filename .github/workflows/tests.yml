@@ -118,7 +118,7 @@ jobs:
       - name: Let Docker push to Artifact Registry
         run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build and push the image
         uses: docker/build-push-action@v6
@@ -246,7 +246,7 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         if: steps.changes.outputs.changed == 'true'
 
       - name: Build and push the worker image (the build runs ingestion.image_check, so every model and tool must load)
