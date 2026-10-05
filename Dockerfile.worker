@@ -41,7 +41,8 @@ RUN pip install -r requirements-worker.txt
 
 # ---- models, baked in. Only the small config files are copied first, so this slow layer stays cached
 # ---- unless a model name changes.
-COPY src/shared/__init__.py src/shared/embedding_config.py src/shared/query_guardrail.py ./src/shared/
+# query_guardrail imports langfuse_client, so it must be here too.
+COPY src/shared/__init__.py src/shared/embedding_config.py src/shared/query_guardrail.py src/shared/langfuse_client.py ./src/shared/
 COPY src/ingestion/__init__.py src/ingestion/chunking_config.py ./src/ingestion/
 
 # bge-base, CLIP (public) and the tokenizer encoding the chunker counts with.

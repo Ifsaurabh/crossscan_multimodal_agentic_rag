@@ -35,7 +35,8 @@ RUN pip install -r requirements.txt
 # app reads, so they cannot drift. The two small config files are copied BEFORE the rest of src/,
 # so this slow layer stays cached unless a model name changes.
 ENV HF_HOME=/opt/hf_cache
-COPY src/shared/__init__.py src/shared/embedding_config.py src/shared/model_config.py src/shared/query_guardrail.py ./src/shared/
+# query_guardrail imports langfuse_client, and retrieval_config imports db (for the pool size): both must be here too.
+COPY src/shared/__init__.py src/shared/embedding_config.py src/shared/model_config.py src/shared/query_guardrail.py src/shared/langfuse_client.py src/shared/db.py ./src/shared/
 COPY src/retrieval/__init__.py src/retrieval/retrieval_config.py ./src/retrieval/
 RUN cd src && python -c "\
 from sentence_transformers import CrossEncoder, SentenceTransformer; \
