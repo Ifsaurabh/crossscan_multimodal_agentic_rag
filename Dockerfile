@@ -1,15 +1,19 @@
 # CrossScan Streamlit chat UI, deployed on Cloud Run by GitHub Actions (.github/workflows/tests.yml):
 # tests pass -> this image is built and pushed to Artifact Registry -> a no-traffic revision is
-# health-checked -> traffic moves to it. Postgres (Neon) and Neo4j (Aura) are external managed
-# services: set DATABASE_URL, NEO4J_*, GEMINI_API_KEY and the ADMIN_* / limit settings as env
+# health-checked -> traffic moves to it. Postgres (Neon) is an external managed
+# service: set DATABASE_URL, GEMINI_API_KEY and the ADMIN_* / limit settings as env
 # vars/secrets on the Cloud Run service (same names as the local .env).
+#
+# This is the APP image: it contains src/shared/ (used by the app and the worker) and src/retrieval/ (the
+# chat and the retrieval pipeline). The ingestion worker has its own image; evaluation is in neither.
 FROM python:3.11-slim
 
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app/src
 
 COPY requirements.txt .
 # torch's plain PyPI wheel bundles full CUDA support on Linux (several extra GB) unless told
@@ -31,11 +35,12 @@ RUN pip install -r requirements.txt
 # app reads, so they cannot drift. The two small config files are copied BEFORE the rest of src/,
 # so this slow layer stays cached unless a model name changes.
 ENV HF_HOME=/opt/hf_cache
-COPY src/embedding_config.py src/retrieval_config.py src/query_guardrail.py ./src/
+COPY src/shared/__init__.py src/shared/embedding_config.py src/shared/model_config.py src/shared/query_guardrail.py ./src/shared/
+COPY src/retrieval/__init__.py src/retrieval/retrieval_config.py ./src/retrieval/
 RUN cd src && python -c "\
 from sentence_transformers import CrossEncoder, SentenceTransformer; \
-from embedding_config import TEXT_MODEL_NAME; \
-from retrieval_config import RERANKER_MODEL; \
+from shared.embedding_config import TEXT_MODEL_NAME; \
+from retrieval.retrieval_config import RERANKER_MODEL; \
 SentenceTransformer(TEXT_MODEL_NAME); CrossEncoder(RERANKER_MODEL); \
 print('baked:', TEXT_MODEL_NAME, RERANKER_MODEL)"
 # Llama Prompt Guard 2 (the prompt-injection flagger in query_guardrail.py) is a GATED model, so it
@@ -49,7 +54,7 @@ RUN --mount=type=secret,id=hf_token \
     if [ -s /run/secrets/hf_token ]; then \
         cd src && HF_TOKEN="$(cat /run/secrets/hf_token)" python -c "\
 from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
-from query_guardrail import PROMPT_GUARD_MODEL; \
+from shared.query_guardrail import PROMPT_GUARD_MODEL; \
 AutoTokenizer.from_pretrained(PROMPT_GUARD_MODEL); AutoModelForSequenceClassification.from_pretrained(PROMPT_GUARD_MODEL); \
 print('baked:', PROMPT_GUARD_MODEL)"; \
     elif [ "$REQUIRE_PROMPT_GUARD" = "1" ]; then \
@@ -63,19 +68,18 @@ ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1
 RUN cd src && python -c "\
 from sentence_transformers import CrossEncoder, SentenceTransformer; \
-from embedding_config import TEXT_MODEL_NAME; \
-from retrieval_config import RERANKER_MODEL; \
+from shared.embedding_config import TEXT_MODEL_NAME; \
+from retrieval.retrieval_config import RERANKER_MODEL; \
 SentenceTransformer(TEXT_MODEL_NAME); CrossEncoder(RERANKER_MODEL); \
 print('offline load OK')"
 # Presidio's spaCy model comes from requirements.txt (a wheel, no download at runtime); prove it loads.
 RUN python -c "import spacy; spacy.load('en_core_web_sm'); print('spaCy model OK')"
 
-COPY src ./src
-# Source figures the chat UI shows alongside answers (render_extras() in chat_app.py). Only
-# this subfolder - .dockerignore excludes the rest of data/ (raw PDFs, embeddings, etc.), which
-# aren't needed at runtime. Missing entirely would fail SOFTLY (chat_app.py checks
-# IMAGES_DIR.exists() first), but images just wouldn't show - worth the ~30MB to have them.
-COPY data/images ./data/images
+COPY src/shared ./src/shared
+COPY src/retrieval ./src/retrieval
+# The figures the chat UI shows next to answers are NOT baked into the image: the ingestion worker writes them to the
+# documents bucket and retrieval/image_store.py reads them from there (the service account needs read access to the
+# bucket), so a newly ingested document's figures appear without a redeploy.
 
 WORKDIR /app/src
 EXPOSE 8000
@@ -88,4 +92,4 @@ EXPOSE 8000
 # what Streamlit expects, which breaks its websocket connection (the whole app) unless disabled.
 # showErrorDetails=none: an uncaught error shows users a plain message, never a stack trace (which
 # can expose host names and internals); the real error is still written to the Cloud Run logs.
-CMD streamlit run chat_app.py --server.port=${PORT:-8000} --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false --client.showErrorDetails=none
+CMD streamlit run retrieval/chat_app.py --server.port=${PORT:-8000} --server.address=0.0.0.0 --server.headless=true --server.enableCORS=false --server.enableXsrfProtection=false --client.showErrorDetails=none

@@ -1,11 +1,11 @@
-"""retrieval_executor: the search functions (Postgres pool + shared Neo4j driver) and the
+"""retrieval_executor: the search functions (Postgres pool) and the
 lazily loaded embedding model. No real model, database or network is used."""
 import threading
 import time
 
 import pytest
 
-import retrieval_executor as rex
+from retrieval import retrieval_executor as rex
 from fake_db import FakeConn
 
 VECTOR = [0.5]
@@ -31,45 +31,11 @@ class FakeBorrow:
         return False
 
 
-class FakeSession:
-    def __init__(self, rows):
-        self.rows = rows
-        self.calls = []
-
-    def run(self, query, **params):
-        self.calls.append((query, params))
-        return list(self.rows)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-
-class FakeDriver:
-    def __init__(self, rows=()):
-        self.session_obj = FakeSession(rows)
-        self.closed = 0
-
-    def session(self):
-        return self.session_obj
-
-    def close(self):
-        self.closed += 1
-
-
 def use_borrow(monkeypatch, conn=None):
     pool = FakeBorrow(conn)
     monkeypatch.setattr(rex, "connection", pool)
     monkeypatch.setattr(rex, "embed_query", lambda text: VECTOR)
     return pool
-
-
-def use_driver(monkeypatch, rows=()):
-    driver = FakeDriver(rows)
-    monkeypatch.setattr(rex, "get_driver", lambda: driver)
-    return driver
 
 
 def chunk_row(chunk_id, similarity=None):
@@ -245,142 +211,195 @@ def test_hybrid_search_uses_one_connection_for_all_three_queries(monkeypatch):
     assert pool.entered == 1 and len(pool.conn.executed) == 3
 
 
-# ---------- graph_search (Neo4j entities) ----------
+# ---------- the entity graph search is gone ----------
 
-ENTITY_ROWS = [
-    {"entity": "VGG16", "entity_type": "Method", "relationship": "USES_METHOD", "source_pdf": "a.pdf", "domain": "lung"},
-    {"entity": "LIDC-IDRI", "entity_type": "Dataset", "relationship": "USES_DATASET", "source_pdf": "a.pdf", "domain": "lung"},
-    {"entity": "Accuracy", "entity_type": "Metric", "relationship": "EVALUATED_WITH", "source_pdf": "b.pdf", "domain": "lung"},
-]
+# ---------- get_images_for_parents ----------
 
+def test_images_with_no_parent_ids_return_nothing_without_touching_the_database(monkeypatch):
+    pool = use_borrow(monkeypatch)
 
-def test_graph_search_matches_entities_named_in_the_query(monkeypatch):
-    use_driver(monkeypatch, ENTITY_ROWS)
-
-    results = rex.graph_search("what accuracy did VGG16 get")
-
-    assert [r["entity"] for r in results] == ["VGG16", "Accuracy"]
+    assert rex.get_images_for_parents() == []
+    assert rex.get_images_for_parents(parent_ids=[]) == []
+    assert pool.entered == 0
 
 
-def test_graph_search_also_matches_on_a_word_inside_an_entity_name(monkeypatch):
-    use_driver(monkeypatch, ENTITY_ROWS)
+def test_images_are_found_by_the_parent_id_they_were_linked_to_at_ingestion(monkeypatch):
+    conn = FakeConn(responses=[("images", [("lung-cancer/a/page3_img1.png", 3, "p1", "lung-cancer/a.pdf")])])
+    pool = use_borrow(monkeypatch, conn)
 
-    assert [r["entity"] for r in rex.graph_search("lidc data")] == ["LIDC-IDRI"]
+    images = rex.get_images_for_parents(parent_ids=["p1", "p2"])
 
-
-def test_graph_search_with_no_match_returns_nothing(monkeypatch):
-    use_driver(monkeypatch, ENTITY_ROWS)
-
-    assert rex.graph_search("weather in paris") == []
-
-
-def test_graph_search_respects_top_k(monkeypatch):
-    use_driver(monkeypatch, ENTITY_ROWS)
-
-    assert len(rex.graph_search("what accuracy did VGG16 get", top_k=1)) == 1
+    sql, params = conn.executed[0]
+    assert ".images" in sql
+    assert "WHERE parent_id = ANY(%s)" in sql and params == (["p1", "p2"],)
+    assert "page BETWEEN" not in sql  # no page-range join at search time
+    assert images == [{"image_file": "lung-cancer/a/page3_img1.png", "page": 3, "parent_id": "p1",
+                       "source_pdf": "lung-cancer/a.pdf"}]
+    assert pool.entered == 1 and pool.exit_exceptions == [None]  # one connection, handed back
 
 
-def test_graph_search_uses_the_shared_driver_and_never_closes_it(monkeypatch):
-    driver = use_driver(monkeypatch, ENTITY_ROWS)
-
-    rex.graph_search("VGG16")
-    rex.graph_search("accuracy")
-
-    assert len(driver.session_obj.calls) == 2 and driver.closed == 0
+def test_no_images_for_the_parents_gives_an_empty_list(monkeypatch):
+    use_borrow(monkeypatch, FakeConn())
+    assert rex.get_images_for_parents(parent_ids=["p1"]) == []
 
 
-# ---------- get_images_for_sections ----------
+# ---------- get_tables_for_parents ----------
 
-def test_images_with_no_ids_return_nothing_without_touching_the_database(monkeypatch):
-    monkeypatch.setattr(rex, "get_driver", lambda: pytest.fail("must not connect"))
-
-    assert rex.get_images_for_sections() == []
-    assert rex.get_images_for_sections(chunk_ids=[], source_pdfs=[]) == []
+TABLE_ROW = ("lung-cancer/a_t1", "Model  Precision  Recall" + chr(92) + "nVGG16  0.98  0.97", "Table 4: results", 14, "p1",
+             "lung-cancer/a.pdf")
 
 
-def test_images_near_retrieved_sections_are_looked_up_by_chunk_id(monkeypatch):
-    driver = use_driver(monkeypatch, [{"image_file": "fig1.png", "page": 3, "chunk_id": "c1"}])
+def test_tables_with_no_parent_ids_return_nothing_without_touching_the_database(monkeypatch):
+    pool = use_borrow(monkeypatch)
 
-    images = rex.get_images_for_sections(chunk_ids=["c1", "c2"])
-
-    query, params = driver.session_obj.calls[0]
-    assert "NEAR_SECTION" in query and params == {"chunk_ids": ["c1", "c2"]}
-    assert images == [{"image_file": "fig1.png", "page": 3, "chunk_id": "c1"}]
+    assert rex.get_tables_for_parents() == []
+    assert rex.get_tables_for_parents(parent_ids=[]) == []
+    assert pool.entered == 0
 
 
-def test_images_can_be_looked_up_by_paper_instead(monkeypatch):
-    driver = use_driver(monkeypatch)
+def test_tables_of_the_parents_come_back_with_their_text_caption_and_source(monkeypatch):
+    conn = FakeConn(responses=[("doc_tables", [TABLE_ROW])])
+    use_borrow(monkeypatch, conn)
 
-    rex.get_images_for_sections(source_pdfs=["a.pdf"])
+    tables = rex.get_tables_for_parents(parent_ids=["p1"])
 
-    query, params = driver.session_obj.calls[0]
-    assert "APPEARS_IN" in query and params == {"source_pdfs": ["a.pdf"]}
-
-
-def test_chunk_ids_win_when_both_are_given_and_the_driver_stays_open(monkeypatch):
-    driver = use_driver(monkeypatch)
-
-    rex.get_images_for_sections(chunk_ids=["c1"], source_pdfs=["a.pdf"])
-
-    assert driver.session_obj.calls[0][1] == {"chunk_ids": ["c1"]}
-    assert driver.closed == 0
+    sql, params = conn.executed[0]
+    assert "WHERE parent_id = ANY(%s)" in sql and params == (["p1"],)
+    assert tables == [{"table_id": "lung-cancer/a_t1", "text": TABLE_ROW[1], "caption": "Table 4: results", "page": 14,
+                       "parent_id": "p1", "source_pdf": "lung-cancer/a.pdf"}]
 
 
-# ---------- get_tables_for_sections (new) ----------
-
-TABLE_ROW = {"table_id": "a.pdf_table1", "text": "Model  Precision  Recall\nVGG16  0.98  0.97", "page": 14,
-             "chunk_id": "c1", "source_pdf": "a.pdf"}
-
-
-def test_tables_with_no_ids_return_nothing_without_touching_the_database(monkeypatch):
-    monkeypatch.setattr(rex, "get_driver", lambda: pytest.fail("must not connect"))
-
-    assert rex.get_tables_for_sections() == []
-    assert rex.get_tables_for_sections(chunk_ids=[], source_pdfs=None) == []
+def test_a_table_without_a_caption_has_an_empty_one(monkeypatch):
+    row = TABLE_ROW[:2] + (None,) + TABLE_ROW[3:]
+    use_borrow(monkeypatch, FakeConn(responses=[("doc_tables", [row])]))
+    assert rex.get_tables_for_parents(parent_ids=["p1"])[0]["caption"] == ""
 
 
-def test_tables_near_retrieved_sections_come_back_with_their_own_text(monkeypatch):
-    driver = use_driver(monkeypatch, [TABLE_ROW])
-
-    tables = rex.get_tables_for_sections(chunk_ids=["c1"])
-
-    query, params = driver.session_obj.calls[0]
-    assert "(t:Table)-[:NEAR_SECTION]->(s:Section)" in query and params == {"chunk_ids": ["c1"]}
-    assert tables == [TABLE_ROW]
-    assert "VGG16" in tables[0]["text"]  # the table text lives on the node, no second lookup
+def test_a_parent_with_no_tables_gives_an_empty_list(monkeypatch):
+    use_borrow(monkeypatch, FakeConn())
+    assert rex.get_tables_for_parents(parent_ids=["p1"]) == []
 
 
-def test_the_table_lookup_always_returns_the_source_paper(monkeypatch):
-    """Regression: the chunk_ids branch once returned no source_pdf, so the answer prompt
-    would have labelled every table 'unknown'."""
-    driver = use_driver(monkeypatch)
+# ---------- search_tables ----------
 
-    rex.get_tables_for_sections(chunk_ids=["c1"])
-    rex.get_tables_for_sections(source_pdfs=["a.pdf"])
-
-    for query, _ in driver.session_obj.calls:
-        assert "source_pdf AS source_pdf" in query
+def search_row(similarity):
+    return TABLE_ROW + (similarity,)
 
 
-def test_tables_can_be_looked_up_by_paper_instead(monkeypatch):
-    driver = use_driver(monkeypatch)
+def test_the_table_search_orders_by_distance_and_asks_for_at_most_top_k(monkeypatch):
+    conn = FakeConn(responses=[("doc_tables", [search_row(0.8)])])
+    use_borrow(monkeypatch, conn)
 
-    rex.get_tables_for_sections(source_pdfs=["a.pdf", "b.pdf"])
+    rex.search_tables("recall in Table 4", top_k=3)
 
-    query, params = driver.session_obj.calls[0]
-    assert "(t:Table)-[:APPEARS_IN]->(p:Paper)" in query and params == {"source_pdfs": ["a.pdf", "b.pdf"]}
-
-
-def test_chunk_ids_win_over_papers_for_tables_and_the_driver_stays_open(monkeypatch):
-    driver = use_driver(monkeypatch)
-
-    rex.get_tables_for_sections(chunk_ids=["c1"], source_pdfs=["a.pdf"])
-
-    assert driver.session_obj.calls[0][1] == {"chunk_ids": ["c1"]}
-    assert driver.closed == 0
+    sql, params = conn.executed[0]
+    assert "ORDER BY embedding <=> %s" in sql and "LIMIT %s" in sql and params == (VECTOR, VECTOR, 3)
 
 
-def test_a_paper_with_no_tables_gives_an_empty_list(monkeypatch):
-    use_driver(monkeypatch, [])
+def test_only_tables_at_or_above_the_minimum_similarity_are_returned(monkeypatch):
+    rows = [search_row(0.82), search_row(0.45), search_row(0.31)]
+    use_borrow(monkeypatch, FakeConn(responses=[("doc_tables", rows)]))
 
-    assert rex.get_tables_for_sections(chunk_ids=["c1"]) == []
+    found = rex.search_tables("q", min_similarity=0.45)
+
+    assert [t["similarity"] for t in found] == [0.82, 0.45]
+    assert found[0]["table_id"] == "lung-cancer/a_t1" and found[0]["caption"] == "Table 4: results"
+
+
+def test_an_unrelated_nearest_table_is_not_returned(monkeypatch):
+    use_borrow(monkeypatch, FakeConn(responses=[("doc_tables", [search_row(0.2)])]))
+    assert rex.search_tables("training time table") == []
+
+
+def test_the_default_limits_come_from_the_config(monkeypatch):
+    import inspect
+
+    from retrieval import retrieval_config as cfg
+
+    defaults = inspect.signature(rex.search_tables).parameters
+    assert defaults["top_k"].default == cfg.TABLE_TOP_K == 3
+    assert defaults["min_similarity"].default == cfg.MIN_TABLE_SIMILARITY
+
+
+# ---------- batch embedding and a cap on parallel searches ----------
+
+class BatchModel:
+    def __init__(self):
+        self.calls = []
+
+    def encode(self, text, normalize_embeddings=False):
+        self.calls.append(text)
+        return [[float(len(t))] for t in text] if isinstance(text, list) else [float(len(text))]
+
+
+def test_several_texts_are_embedded_in_one_call_in_order(monkeypatch):
+    model = BatchModel()
+    monkeypatch.setattr(rex, "get_embedding_model", lambda: model)
+
+    vectors = rex.embed_queries(["a", "bb", "ccc"])
+
+    assert model.calls == [["a", "bb", "ccc"]] and vectors == [[1.0], [2.0], [3.0]]
+    assert rex.embed_queries([]) == [] and len(model.calls) == 1  # nothing to embed: the model is not called
+
+
+def test_a_search_given_its_vector_does_not_embed_again(monkeypatch):
+    monkeypatch.setattr(rex, "embed_query", lambda text: pytest.fail("the vector was already made"))
+    conn = FakeConn(responses=[("text_chunks", [chunk_row("c1", 0.9)])])
+    use_borrow(monkeypatch, conn)
+
+    rex.vector_search("q", query_vec=[0.1, 0.2])
+    rex.hybrid_vector_search("q", query_vec=[0.1, 0.2])
+
+    assert conn.executed[0][1][0] == [0.1, 0.2]
+
+
+def test_no_more_searches_than_the_pool_allows_run_at_once(monkeypatch):
+    import threading
+    import time
+
+    monkeypatch.setattr(rex, "_search_slots", threading.BoundedSemaphore(2))
+    running, peak, lock = [0], [0], threading.Lock()
+
+    class Conn:
+        def execute(self, sql, params=None):
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            time.sleep(0.05)
+            with lock:
+                running[0] -= 1
+            return type("C", (), {"fetchall": lambda self: []})()
+
+    monkeypatch.setattr(rex, "connection", FakeBorrow(Conn()))
+    monkeypatch.setattr(rex, "embed_query", lambda text: VECTOR)
+
+    threads = [threading.Thread(target=rex.vector_search, args=("q",)) for _ in range(6)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+
+    assert peak[0] == 2  # six searches asked, two at a time
+
+
+def test_a_failed_search_gives_its_slot_back(monkeypatch):
+    import threading
+
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(rex, "_search_slots", slots)
+
+    class Down:
+        def execute(self, *a, **k):
+            raise RuntimeError("database unreachable")
+
+    monkeypatch.setattr(rex, "connection", FakeBorrow(Down()))
+    monkeypatch.setattr(rex, "embed_query", lambda text: VECTOR)
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            rex.vector_search("q")
+
+    assert slots.acquire(blocking=False)  # still available after three failures
+
+
+def test_the_parallel_limit_is_the_pool_size():
+    from retrieval import retrieval_config as cfg
+
+    assert cfg.MAX_PARALLEL_SEARCHES == 8 or cfg.MAX_PARALLEL_SEARCHES > 0

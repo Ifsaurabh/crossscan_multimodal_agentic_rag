@@ -2,11 +2,11 @@ import psycopg
 import psycopg_pool
 import pytest
 
-import chatbot
-import usage_tracker
-from chat_store import SessionNotFound
+from retrieval import chatbot
+from shared import usage_tracker
+from retrieval.chat_store import SessionNotFound
 from fake_db import FakeConn
-from quotas import QuotaExceeded
+from retrieval.quotas import QuotaExceeded
 
 USER = {"user_id": "u1", "username": "alice", "role": "user", "daily_request_limit": None, "daily_token_limit": None}
 
@@ -130,7 +130,7 @@ def test_new_session_turn_redacts_pii_persists_and_records_usage(monkeypatch):
 
     assert h.created == 1
     assert "jane@example.com" not in h.invocations[0]["query"]
-    assert h.invocations[0]["history"] == ""
+    assert h.invocations[0]["history"] == {}
     roles = [(role) for _, role, _, _ in h.added]
     assert roles == ["user", "assistant"]
     assert "jane@example.com" not in h.added[0][2]
@@ -151,9 +151,10 @@ def test_existing_session_passes_recent_history_and_notes_to_the_graph(monkeypat
     chatbot.handle_message(USER, "s1", "and its recall?", conn=FakeConn(), invoke=h.invoke())
 
     call = h.invocations[0]
-    assert "Talked about YOLO." in call["history"]
-    assert "which YOLO is best?" in call["history"]
-    assert call["notes"] == "- studies lung CT"
+    assert call["history"]["summary"] == "Talked about YOLO."
+    assert [t["text"] for t in call["history"]["recent_turns"]] == ["which YOLO is best?", "YOLOv8"]
+    assert call["history"]["recent_turns"][1]["citations"] == []   # no sources were stored with this message
+    assert call["notes"] == ["studies lung CT"]
     assert h.created == 0
 
 
@@ -278,6 +279,29 @@ def test_a_busy_service_refuses_before_any_model_call_and_charges_nothing(monkey
     assert h.invocations == [] and h.recorded == [] and h.created == 0
 
 
+def test_a_busy_refusal_gives_the_per_minute_slot_back_to_the_user(monkeypatch):
+    h = Harness(monkeypatch)
+    refunded = []
+    monkeypatch.setattr(chatbot.quotas, "refund_rate_slot", lambda conn, user: refunded.append(user["user_id"]))
+    monkeypatch.setattr(chatbot.quotas, "concurrency_limiter", chatbot.quotas.ConcurrencyLimiter(limit=1))
+    chatbot.quotas.concurrency_limiter.acquire()  # the only slot is taken
+
+    with pytest.raises(QuotaExceeded):
+        chatbot.handle_message(USER, None, "hello", conn=FakeConn(), invoke=h.invoke())
+
+    assert refunded == [USER["user_id"]]
+
+
+def test_an_answered_question_keeps_its_per_minute_slot(monkeypatch):
+    h = Harness(monkeypatch)
+    refunded = []
+    monkeypatch.setattr(chatbot.quotas, "refund_rate_slot", lambda conn, user: refunded.append(user["user_id"]))
+
+    chatbot.handle_message(USER, None, "hello", conn=FakeConn(), invoke=h.invoke())
+
+    assert refunded == []
+
+
 def test_the_slot_is_freed_after_a_turn_even_when_it_fails(monkeypatch):
     h = Harness(monkeypatch)
     limiter = chatbot.quotas.ConcurrencyLimiter(limit=1)
@@ -291,7 +315,7 @@ def test_the_slot_is_freed_after_a_turn_even_when_it_fails(monkeypatch):
 
 
 def test_all_models_failing_becomes_service_unavailable_and_is_not_charged(monkeypatch):
-    from llm_connection import AllProvidersFailed
+    from shared.llm_connection import AllProvidersFailed
 
     h = Harness(monkeypatch)
 
@@ -302,15 +326,6 @@ def test_all_models_failing_becomes_service_unavailable_and_is_not_charged(monke
         )
 
     assert h.recorded == [] and h.created == 0
-
-
-def test_neo4j_being_down_becomes_service_unavailable(monkeypatch):
-    from neo4j.exceptions import ServiceUnavailable as Neo4jDown
-
-    h = Harness(monkeypatch)
-
-    with pytest.raises(chatbot.ServiceUnavailable, match="knowledge graph"):
-        chatbot.handle_message(USER, None, "hello", conn=FakeConn(), invoke=h.invoke(raises=Neo4jDown("no route")))
 
 
 def test_unrelated_errors_are_not_disguised_as_an_outage(monkeypatch):
@@ -583,3 +598,9 @@ def test_a_query_with_no_model_score_is_stored_with_a_null_score(monkeypatch):
     chatbot.handle_message(USER, None, "What is a CNN?", conn=FakeConn(), invoke=h.invoke())
 
     assert h.added[1][3]["injection_score"] is None
+
+
+def test_a_requested_image_that_was_not_found_gives_a_notice_to_the_user():
+    assert chatbot.images_notice({"sub_queries": [{"images_missing": True}]}) == chatbot.IMAGES_NOT_FOUND
+    assert chatbot.images_notice({"sub_queries": [{"images_missing": False}, {}]}) is None
+    assert chatbot.images_notice({}) is None

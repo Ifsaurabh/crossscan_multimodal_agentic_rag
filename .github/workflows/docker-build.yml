@@ -11,9 +11,8 @@ on:
       - "Dockerfile"
       - ".dockerignore"
       - "requirements.txt"
-      - "src/embedding_config.py"
-      - "src/retrieval_config.py"
-      - "src/chat_app.py"
+      - "src/shared/**"
+      - "src/retrieval/**"
       - ".github/workflows/docker-build.yml"
   workflow_dispatch: {}
 

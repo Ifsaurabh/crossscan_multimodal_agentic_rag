@@ -2,7 +2,7 @@
 and credential-shaped strings, and the citation checks run on the cleaned text."""
 import pytest
 
-import output_guardrail as og
+from retrieval import output_guardrail as og
 
 CHUNKS = [{"source_pdf": "a.pdf", "page_start": 2, "page_end": 4}]
 

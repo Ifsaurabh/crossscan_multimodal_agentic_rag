@@ -1,6 +1,6 @@
 import hashlib
 
-import experiment_tracking as et
+from evaluation import experiment_tracking as et
 
 
 def test_golden_set_version_uses_dvc_md5_when_present(tmp_path):

@@ -1,83 +1,58 @@
-import json
-
 import torch
 from PIL import Image
 
-import embed_images as ei
-import embedding_config as cfg
+from ingestion import embed_images as ei
 
 
 class FakeProcessor:
+    def __init__(self):
+        self.batch_sizes, self.modes = [], []
+
     def __call__(self, images, return_tensors="pt"):
-        return {"pixel_values": torch.zeros(1, 3, 4, 4)}
+        self.batch_sizes.append(len(images))
+        self.modes.extend(img.mode for img in images)
+        return {"pixel_values": torch.zeros(len(images), 3, 4, 4)}
 
 
 class FakeVisionOutputs:
-    pooler_output = torch.tensor([[1.0, 2.0]])
+    def __init__(self, n):
+        self.pooler_output = torch.ones(n, 2)
 
 
 class FakeModel:
     def vision_model(self, pixel_values):
-        return FakeVisionOutputs()
+        return FakeVisionOutputs(pixel_values.shape[0])
 
     def visual_projection(self, pooled):
-        return torch.tensor([[3.0, 4.0]])
+        return torch.tensor([[3.0, 4.0]] * pooled.shape[0])
 
 
-def test_embed_images_produces_normalized_embeddings(tmp_path, monkeypatch):
-    images_dir = tmp_path / "images"
-    images_dir.mkdir()
+def test_a_picture_is_embedded_to_a_unit_length_vector():
+    vector = ei.embed_pil_image(FakeModel(), FakeProcessor(), Image.new("RGB", (50, 50)))
 
-    monkeypatch.setattr(ei, "IMAGES_DIR", images_dir)
-    monkeypatch.setattr(ei, "METADATA_PATH", images_dir / "metadata.json")
-    monkeypatch.setattr(ei, "EMBEDDINGS_PATH", tmp_path / "embeddings" / "image_embeddings.json")
-    monkeypatch.setattr(ei, "REPORT_PATH", tmp_path / "image_embedding_report.json")
-
-    img_path = images_dir / "fig1.png"
-    Image.new("RGB", (50, 50)).save(img_path)
-
-    metadata = [{"image_file": "fig1.png", "source_pdf": "a.pdf", "page": 2}]
-    (images_dir / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
-
-    monkeypatch.setattr(ei, "CLIPModel", type("M", (), {"from_pretrained": staticmethod(lambda name: FakeModel())}))
-    monkeypatch.setattr(ei, "CLIPProcessor", type("P", (), {"from_pretrained": staticmethod(lambda name: FakeProcessor())}))
-
-    ei.embed_images()
-
-    out_path = tmp_path / "embeddings" / "image_embeddings.json"
-    result = json.loads(out_path.read_text(encoding="utf-8"))
-
-    assert result["embedding_version"] == cfg.EMBEDDING_VERSION
-    assert len(result["records"]) == 1
-    rec = result["records"][0]
-    assert rec["image_file"] == "fig1.png"
-    assert rec["source_pdf"] == "a.pdf"
-    assert rec["page"] == 2
-
-    norm = sum(v ** 2 for v in rec["embedding"]) ** 0.5
-    assert abs(norm - 1.0) < 1e-5
+    assert len(vector) == 2
+    assert abs(sum(v ** 2 for v in vector) ** 0.5 - 1.0) < 1e-5
 
 
-def test_embed_images_records_failures_for_unreadable_images(tmp_path, monkeypatch):
-    images_dir = tmp_path / "images"
-    images_dir.mkdir()
+def test_many_pictures_are_embedded_in_batches_in_the_order_given():
+    processor = FakeProcessor()
 
-    monkeypatch.setattr(ei, "IMAGES_DIR", images_dir)
-    monkeypatch.setattr(ei, "METADATA_PATH", images_dir / "metadata.json")
-    monkeypatch.setattr(ei, "EMBEDDINGS_PATH", tmp_path / "embeddings" / "image_embeddings.json")
-    monkeypatch.setattr(ei, "REPORT_PATH", tmp_path / "image_embedding_report.json")
+    vectors = ei.embed_pil_images(FakeModel(), processor, [Image.new("RGB", (8, 8)) for _ in range(20)], batch_size=8)
 
-    corrupt_path = images_dir / "bad.png"
-    corrupt_path.write_bytes(b"not an image")
+    assert processor.batch_sizes == [8, 8, 4] and len(vectors) == 20
+    assert all(abs(sum(v ** 2 for v in vec) ** 0.5 - 1.0) < 1e-5 for vec in vectors)
 
-    metadata = [{"image_file": "bad.png", "source_pdf": "a.pdf", "page": 1}]
-    (images_dir / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
 
-    monkeypatch.setattr(ei, "CLIPModel", type("M", (), {"from_pretrained": staticmethod(lambda name: FakeModel())}))
-    monkeypatch.setattr(ei, "CLIPProcessor", type("P", (), {"from_pretrained": staticmethod(lambda name: FakeProcessor())}))
+def test_no_pictures_gives_no_vectors_and_no_model_call():
+    processor = FakeProcessor()
+    assert ei.embed_pil_images(FakeModel(), processor, []) == [] and processor.batch_sizes == []
 
-    ei.embed_images()
 
-    report = json.loads((tmp_path / "image_embedding_report.json").read_text(encoding="utf-8"))
-    assert report["images_failed"] == 1
-    assert report["images_embedded"] == 0
+def test_the_default_batch_is_sixteen_pictures():
+    assert ei.IMAGE_BATCH_SIZE == 16
+
+
+def test_a_picture_with_an_alpha_channel_is_converted_before_embedding():
+    processor = FakeProcessor()
+    ei.embed_pil_images(FakeModel(), processor, [Image.new("RGBA", (10, 10)), Image.new("L", (10, 10))])
+    assert processor.modes == ["RGB", "RGB"]

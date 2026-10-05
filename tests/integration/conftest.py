@@ -15,13 +15,16 @@ import psycopg
 import pytest
 
 # Modules that build SQL from a module-level SCHEMA_NAME at call time.
-APP_MODULES = ("db", "auth", "quotas", "chat_store", "memory", "feedback", "online_eval", "online_report")
+APP_MODULES = (
+    "shared.db", "retrieval.auth", "retrieval.quotas", "retrieval.chat_store", "retrieval.memory", "retrieval.feedback",
+    "retrieval.online_eval", "retrieval.online_report", "retrieval.event_log",
+)
 
 
 @pytest.fixture(scope="session")
 def schema():
-    import db  # loads .env, so DATABASE_URL is available
-    import setup_app_db
+    from shared import db  # loads .env, so DATABASE_URL is available
+    from retrieval import setup_app_db
 
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -52,7 +55,7 @@ def schema():
 def conn(schema):
     """A real connection whose search_path is the throwaway schema, with every
     table emptied first so each test starts clean."""
-    import db
+    from shared import db
 
     connection = db.get_connection()
     connection.execute(f"TRUNCATE {schema}.users CASCADE")
@@ -66,7 +69,7 @@ def conn(schema):
 def make_user(conn, faker):
     """Creates a real user with Faker data; returns the user dict plus the
     plaintext password that was used."""
-    import auth
+    from retrieval import auth
     import factories
 
     def _make(role: str = "user", password: str = None) -> dict:

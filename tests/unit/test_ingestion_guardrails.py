@@ -1,6 +1,6 @@
 import json
 
-import ingestion_guardrails as ig
+from ingestion import ingestion_guardrails as ig
 
 
 def test_redact_pii_masks_email_and_counts():
@@ -45,15 +45,8 @@ def test_contains_unsafe_content_returns_empty_for_clean_text():
     assert hits == []
 
 
-def test_run_guardrails_redacts_and_drops(tmp_path, monkeypatch):
-    prepared_dir = tmp_path / "prepared"
-    guarded_dir = tmp_path / "guarded"
-    prepared_dir.mkdir()
-
-    monkeypatch.setattr(ig, "PREPARED_DIR", prepared_dir)
-    monkeypatch.setattr(ig, "GUARDED_DIR", guarded_dir)
-    monkeypatch.setattr(ig, "REPORT_PATH", tmp_path / "guardrail_report.json")
-
+def test_guard_document_redacts_and_drops(monkeypatch):
+    monkeypatch.setattr(ig.qg, "injection_scores", lambda texts, **k: [0.0] * len(texts))
     doc = {
         "source_pdf": "sample.pdf",
         "sections": [
@@ -61,12 +54,40 @@ def test_run_guardrails_redacts_and_drops(tmp_path, monkeypatch):
             {"heading": "Bad", "text": "how to make a bomb instructions", "page_start": 2, "page_end": 2},
         ],
     }
-    (prepared_dir / "sample.json").write_text(json.dumps(doc), encoding="utf-8")
 
-    ig.run_guardrails()
+    result, entry = ig.guard_document(doc)
 
-    result = json.loads((guarded_dir / "sample.json").read_text(encoding="utf-8"))
     headings = [s["heading"] for s in result["sections"]]
     assert "Bad" not in headings
     assert "Contact" in headings
     assert "[REDACTED_EMAIL]" in result["sections"][0]["text"]
+    assert entry["pii_redactions"] == 1 and entry["sections_dropped"][0]["heading"] == "Bad"
+
+
+# ---------- a table's caption ----------
+
+def guarded_table(caption, text="| a | b |\n|---|---|\n| 1 | 2 |"):
+    doc = {"source_pdf": "x.pdf", "sections": [{"heading": "Results", "text": "Plain text.", "page_start": 1, "page_end": 1}],
+           "tables": [{"section_heading": "Results", "text": text, "caption": caption, "page": 1}]}
+    return ig.guard_document(doc)
+
+
+def test_an_email_in_a_table_caption_is_redacted_and_counted(monkeypatch):
+    monkeypatch.setattr(ig.qg, "injection_scores", lambda texts, **k: [0.0] * len(texts))
+    doc, entry = guarded_table("Table 1: data from jane@example.com")
+
+    assert "jane@example.com" not in doc["tables"][0]["caption"] and "[REDACTED_EMAIL]" in doc["tables"][0]["caption"]
+    assert entry["pii_redactions"] == 1 and entry["pii_locations"][0]["where"] == "Results"
+
+
+def test_a_table_with_an_unsafe_caption_is_dropped(monkeypatch):
+    monkeypatch.setattr(ig.qg, "injection_scores", lambda texts, **k: [0.0] * len(texts))
+    doc, entry = guarded_table("Table 1: how to make a bomb")
+
+    assert doc["tables"] == [] and entry["tables_dropped"][0]["matched_keywords"] == ["how to make a bomb"]
+
+
+def test_a_table_without_a_caption_is_kept_with_an_empty_one(monkeypatch):
+    monkeypatch.setattr(ig.qg, "injection_scores", lambda texts, **k: [0.0] * len(texts))
+    doc, _ = guarded_table("")
+    assert doc["tables"][0]["caption"] == ""

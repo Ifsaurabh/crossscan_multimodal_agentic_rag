@@ -1,4 +1,4 @@
-import run_query
+from retrieval import run_query
 
 
 def test_initial_state_redacts_pii_before_the_graph_sees_it():
@@ -72,6 +72,6 @@ def test_invoke_graph_passes_callbacks_and_redacted_input(monkeypatch):
 
     result = run_query.invoke_graph(FakeGraph(), "mail bob@example.org")
 
-    assert result == {"final_answer": "ok"}
+    assert result["final_answer"] == "ok" and result["timings"] == {} and result["models_used"] == []
     assert seen["config"] == {"callbacks": ["CB"]}
     assert "bob@example.org" not in seen["state"]["raw_query"]

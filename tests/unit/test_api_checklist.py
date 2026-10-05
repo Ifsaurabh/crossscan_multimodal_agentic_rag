@@ -15,9 +15,9 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-import api
-import auth
-import quotas
+from retrieval import api
+from retrieval import auth
+from retrieval import quotas
 from fake_db import FakeConn
 from test_api import ADMIN, USER, as_user, chat_result, client  # noqa: F401  (client is a pytest fixture)
 
@@ -92,6 +92,7 @@ def test_registration_returns_201_and_delete_returns_204_with_no_body(client, mo
 @pytest.mark.parametrize("payload", [
     {"message": 123}, {"message": None}, {"message": ["hi"]}, {"message": {"a": 1}},
     {"message": "hi", "session_id": ["x"]}, {"message": "hi", "session_id": 5},
+    {"message": ""}, {},   # an empty message and a missing one
 ])
 def test_chat_rejects_wrong_data_types(client, payload):
     as_user(USER)
@@ -167,6 +168,7 @@ def test_feedback_comment_boundary_and_a_non_numeric_message_id(client, monkeypa
     monkeypatch.setattr(api.feedback, "submit_feedback", lambda *a, **k: None)
 
     assert client.post("/chat/messages/5/feedback", json={"rating": 1, "comment": "x" * 500}).status_code == 200
+    assert client.post("/chat/messages/5/feedback", json={"rating": 1, "comment": "x" * 501}).status_code == 422   # one over
     assert client.post("/chat/messages/abc/feedback", json={"rating": 1}).status_code == 422
 
 
@@ -259,6 +261,8 @@ def test_bad_or_missing_credentials_are_401_with_a_bearer_challenge(client, monk
     ("post", "/admin/users", {"username": "newadmin", "password": "longenough1"}),
     ("patch", "/admin/users/bob", {"is_active": False}),
     ("get", "/admin/online-metrics", None), ("get", "/stats", None),
+    ("post", "/chat", {"message": "hi"}), ("get", "/chat/sessions", None), ("get", "/memories", None),
+    ("get", "/me", None), ("get", "/admin/users", None),
     ("post", "/auth/logout", None), ("delete", "/memories", None),
     ("delete", "/chat/sessions/s1", None), ("post", "/chat/messages/5/feedback", {"rating": 1}),
 ])
@@ -557,13 +561,12 @@ def test_a_duplicate_username_rolls_the_transaction_back_and_is_a_400(client, mo
 def startup(monkeypatch):
     """Patches everything the startup hook touches and records what it did."""
     record = types.SimpleNamespace(
-        pool=FakeBorrow(), admin_conns=[], warmed=threading.Event(), pool_closed=0, driver_closed=0,
+        pool=FakeBorrow(), admin_conns=[], warmed=threading.Event(), pool_closed=0,
     )
     monkeypatch.setattr(api, "connection", record.pool)
     monkeypatch.setattr(api.auth, "ensure_admin_from_env", lambda conn: record.admin_conns.append(conn))
     monkeypatch.setattr(api, "_warm_up_embedding_model", record.warmed.set)
     monkeypatch.setattr(api, "close_pool", lambda: setattr(record, "pool_closed", record.pool_closed + 1))
-    monkeypatch.setattr(api, "close_driver", lambda: setattr(record, "driver_closed", record.driver_closed + 1))
     return record
 
 
@@ -580,11 +583,11 @@ def test_startup_loads_the_embedding_model_in_the_background(startup):
         assert startup.warmed.wait(timeout=5)
 
 
-def test_shutdown_closes_the_pool_and_the_driver_once(startup):
+def test_shutdown_closes_the_pool_once(startup):
     with TestClient(api.app):
-        assert startup.pool_closed == 0 and startup.driver_closed == 0  # still running
+        assert startup.pool_closed == 0  # still running
 
-    assert startup.pool_closed == 1 and startup.driver_closed == 1
+    assert startup.pool_closed == 1
 
 
 def test_a_failing_admin_sync_does_not_stop_the_api_from_starting(startup, monkeypatch, capsys):
@@ -603,7 +606,7 @@ def test_a_failing_admin_sync_does_not_stop_the_api_from_starting(startup, monke
 def test_the_warm_up_calls_the_models_loader(monkeypatch):
     calls = []
     fake_module = types.SimpleNamespace(get_embedding_model=lambda: calls.append("loaded"))
-    monkeypatch.setitem(sys.modules, "retrieval_executor", fake_module)  # avoids importing the heavy real one
+    monkeypatch.setitem(sys.modules, "retrieval.retrieval_executor", fake_module)  # avoids importing the heavy real one
 
     api._warm_up_embedding_model()
 
@@ -614,7 +617,7 @@ def test_a_failing_warm_up_is_logged_and_never_raised(monkeypatch, capsys):
     def broken():
         raise OSError("model files missing")
 
-    monkeypatch.setitem(sys.modules, "retrieval_executor", types.SimpleNamespace(get_embedding_model=broken))
+    monkeypatch.setitem(sys.modules, "retrieval.retrieval_executor", types.SimpleNamespace(get_embedding_model=broken))
 
     api._warm_up_embedding_model()  # must not raise
 
@@ -640,14 +643,14 @@ def test_me_shows_an_admin_with_no_limits(client, monkeypatch):
     assert quota["tokens_limit"] is None and quota["tokens_left"] is None
 
 
-def test_me_shows_a_regular_user_with_three_messages_a_day(client, monkeypatch):
+def test_me_shows_a_regular_user_with_six_messages_a_day(client, monkeypatch):
     clear_limit_env(monkeypatch)
     as_user(USER)
     client.conn.responses = [("usage_daily", [(1, 100, 50)])]
 
     quota = client.get("/me").json()["quota"]
 
-    assert quota["requests_limit"] == 3 and quota["requests_left"] == 2
+    assert quota["requests_limit"] == 6 and quota["requests_left"] == 5
     assert quota["tokens_limit"] == 200_000 and quota["tokens_left"] == 200_000 - 150
 
 
@@ -662,7 +665,7 @@ def test_the_admin_user_list_shows_admins_unlimited_and_never_exposes_hashes(cli
     listing = {u["username"]: u for u in client.get("/admin/users").json()}
 
     assert listing["root"]["quota"]["requests_limit"] is None
-    assert listing["alice"]["quota"]["requests_limit"] == 3
+    assert listing["alice"]["quota"]["requests_limit"] == 6
     assert all("password" not in key for user in listing.values() for key in user)
 
 
@@ -724,6 +727,7 @@ def test_stats_with_no_requests_yet_is_all_zeros(client):
 
 
 def test_percentile_handles_one_and_two_values_and_out_of_range_fractions():
+    assert api.percentile([], 0.95) == 0.0
     assert api.percentile([5.0], 0.5) == 5.0
     assert api.percentile([1.0, 9.0], 0.0) == 1.0
     assert api.percentile([1.0, 9.0], 1.0) == 9.0

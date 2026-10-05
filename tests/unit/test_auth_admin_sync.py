@@ -2,7 +2,7 @@
 ADMIN_USERNAME / ADMIN_PASSWORD (.env) every time the app or the API starts."""
 import pytest
 
-import auth
+from retrieval import auth
 from fake_db import FakeConn
 
 USERNAME = "root_admin"

@@ -1,4 +1,4 @@
-import reranker
+from retrieval import reranker
 
 
 class FakeCrossEncoder:

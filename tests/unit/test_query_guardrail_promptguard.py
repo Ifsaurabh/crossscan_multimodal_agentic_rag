@@ -1,7 +1,7 @@
 """query_guardrail: Presidio redaction + Prompt Guard thresholds (the model score is mocked)."""
 import pytest
 
-import query_guardrail as qg
+from shared import query_guardrail as qg
 
 
 def with_score(monkeypatch, score):

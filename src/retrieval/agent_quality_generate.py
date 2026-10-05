@@ -1,0 +1,152 @@
+import json
+import re
+
+from dotenv import load_dotenv
+
+from shared import llm_connection
+from shared.prompt_registry import get_prompt
+
+load_dotenv()
+
+# Fixed instructional blocks - identical on every call, passed as the
+# cacheable system_instruction. Query/context/caveat are the variable part
+# and are NEVER cached (they're different on every single call anyway).
+QUALITY_CHECK_SYSTEM_INSTRUCTION = """You are judging whether retrieved context is sufficient to answer a user's question about research papers.
+
+Is this context sufficient to answer the question accurately and specifically? Respond ONLY as JSON:
+{"sufficient": true, "missing": "", "look_for": ""}
+
+If NOT sufficient, explain what's missing and what to look for instead (to guide a retry):
+{"sufficient": false, "missing": "specific description of what's missing", "look_for": "specific guidance for what to search for instead"}"""
+
+GENERATE_SYSTEM_INSTRUCTION = """You are a research-assistant answering questions about a corpus of 12 research papers (lung cancer / medical imaging, and land cover / remote sensing domains).
+
+Instructions:
+- Answer using ONLY the retrieved context provided. Do not use outside knowledge.
+- Explain in your own words, as if summarizing the finding to a colleague - do not copy sentences verbatim from the source text.
+- Cite sources in the format [source_pdf, p.X], once per distinct claim or paragraph - not after every clause, and never two citations stacked back-to-back.
+- Be concise and directly answer the question."""
+
+GENERAL_KNOWLEDGE_SYSTEM_INSTRUCTION = """You are answering a general-knowledge question that does not require looking up anything in a specific document corpus (e.g. definitions, well-known facts).
+
+Instructions:
+- Answer directly and concisely using your own knowledge.
+- Do not fabricate citations or claim the answer comes from any document corpus."""
+
+NOT_FROM_KNOWLEDGE_BASE_LABEL = "**Note: this answer is not from the knowledge base — it is AI-generated from general knowledge.**\n\n"
+
+
+def format_context(chunks: list, tables: list = None) -> str:
+    # OLD VERSION (commented out, kept for reference): sent parent_text once
+    # PER CHUNK with no dedup. A parent section is usually split into several
+    # chunks, and several of them are often retrieved together (especially
+    # across query variants), so the SAME full section text - sometimes
+    # 500-1500+ tokens - was being sent to the model multiple times over.
+    # Measured effect: 22k-30k prompt tokens for a single question.
+    #
+    # blocks = []
+    # for c in chunks:
+    #     source = c.get("source_pdf", "unknown")
+    #     page = c.get("page_start", "?")
+    #     text = c.get("parent_text") or c.get("text", "")
+    #     blocks.append(f"[{source}, p.{page}]\n{text}")
+    # return "\n\n".join(blocks)
+
+    # NEW VERSION: dedup by parent_id, so each parent section's full text is
+    # included at most once, no matter how many of its chunks were retrieved.
+    # No loss of information - the full section was already being sent - just
+    # no longer repeated.
+    blocks = []
+    seen_parents = set()
+    for c in chunks:
+        parent_id = c.get("parent_id")
+        if parent_id is not None:
+            if parent_id in seen_parents:
+                continue
+            seen_parents.add(parent_id)
+        source = c.get("source_pdf", "unknown")
+        page = c.get("page_start", "?")
+        text = c.get("parent_text") or c.get("text", "")
+        # A chunk that belongs to the whole paper (a knowledge-graph fact) has no page.
+        header = f"[{source}]" if page is None else f"[{source}, p.{page}]"
+        blocks.append(f"{header}\n{text}")
+
+    # Tables never went through this function before - fetched by
+    # retrieval_graph.py but never actually reaching the model. Marked
+    # "(Table)" so the model (and a human reading the prompt) can tell
+    # tabular data apart from prose at a glance.
+    for t in (tables or []):
+        source = t.get("source_pdf", "unknown")
+        page = t.get("page", "?")
+        caption = (t.get("caption") or "").strip()
+        label = f"(Table: {caption})" if caption else "(Table)"
+        note = f"\n[table truncated: {t['rows_cut']} more row(s) not shown]" if t.get("rows_cut") else ""
+        blocks.append(f"[{source}, p.{page}] {label}\n{t.get('text', '')}{note}")
+
+    return "\n\n".join(blocks)
+
+
+def parse_json_response(raw_response: str):
+    text = raw_response.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+    return None
+
+
+def check_quality(query: str, chunks: list, client=None) -> dict:
+    """Agent 2, judgment phase. Returns {sufficient, missing, look_for}.
+    `client` is an optional Gemini client override (tests); normally None -
+    llm_connection picks the provider."""
+    if not chunks:
+        return {"sufficient": False, "missing": "no results retrieved", "look_for": "broader search terms"}
+
+    context = format_context(chunks)
+    user_content = f"User's question: {query}\n\nRetrieved context:\n{context}"
+    instruction = get_prompt("quality-check", QUALITY_CHECK_SYSTEM_INSTRUCTION)
+    response = llm_connection.generate(instruction, user_content, task="quality_check", client=client)
+    result = parse_json_response(response.text.strip())
+
+    if result is None:
+        return {"sufficient": False, "missing": "could not judge quality", "look_for": "retry with broader search"}
+    return result
+
+
+def generate_answer(query: str, chunks: list, tables: list = None, low_confidence: bool = False,
+                     client=None) -> str:
+    """Agent 2, generation phase. Answers are written on the fast tier whatever
+    the question: the passages are already selected, so the stronger (reasoning)
+    tier is spent on planning and judging, where it improves retrieval."""
+    context = format_context(chunks, tables) if (chunks or tables) else "(no context retrieved)"
+    caveat_instruction = (
+        "\n\nIMPORTANT: retrieval confidence was low for this query. Start your answer with a brief "
+        "caveat noting the answer may be incomplete, then answer with whatever context is available."
+        if low_confidence else ""
+    )
+    user_content = (
+        f"User's question: {query}\n\n"
+        f"Retrieved context (each block tagged with its source):\n{context}"
+        f"{caveat_instruction}\n\nWrite the answer now."
+    )
+    instruction = get_prompt("generate-answer", GENERATE_SYSTEM_INSTRUCTION)
+    response = llm_connection.generate(instruction, user_content, task="answer", client=client)
+    return response.text.strip()
+
+
+def generate_general_knowledge_answer(query: str, client=None) -> str:
+    """For sub-queries the Transform+Route Agent marked needs_retrieval=False.
+    Answers from general knowledge and prepends a transparency label so the
+    user always knows when an answer did NOT come from the document corpus."""
+    user_content = f"Question: {query}\n\nAnswer now."
+    instruction = get_prompt("general-knowledge", GENERAL_KNOWLEDGE_SYSTEM_INSTRUCTION)
+    response = llm_connection.generate(instruction, user_content, task="general_knowledge", client=client)
+    return NOT_FROM_KNOWLEDGE_BASE_LABEL + response.text.strip()

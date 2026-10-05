@@ -1,10 +1,10 @@
 name: Live tests + evaluation (weekly / manual)
 
 # The only workflow that spends real Gemini quota and touches the real
-# deployed Postgres/Neo4j (Neon + Aura). Never runs on push - only on a
-# weekly schedule and on-demand. Needs 5 repo secrets set once in
+# deployed Postgres (Neon). Never runs on push - only on a
+# weekly schedule and on-demand. Needs 2 repo secrets set once in
 # GitHub -> Settings -> Secrets and variables -> Actions:
-#   GEMINI_API_KEY, DATABASE_URL, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+#   GEMINI_API_KEY, DATABASE_URL
 # (same values as your real .env - never commit them).
 
 on:
@@ -29,10 +29,13 @@ permissions:
 env:
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
   DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  NEO4J_URI: ${{ secrets.NEO4J_URI }}
-  NEO4J_USER: ${{ secrets.NEO4J_USER }}   # NOT the word "neo4j": this Aura instance uses an instance-specific username
-  NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
   SCHEMA_NAME: rag_new
+  # Where the run is stored: the project's Postgres (database_url above) and a bucket folder. Set the repository
+  # VARIABLES MLFLOW_STORE=database and MLFLOW_ARTIFACT_ROOT=gs://crossscan-docs-upload-here/mlflow to turn it on (empty: the
+  # runner's local ./mlruns, which is thrown away). Writing to the bucket needs the Google sign-in step of the evaluation job
+  # (see .github/MLFLOW_SETUP.md).
+  MLFLOW_STORE: ${{ vars.MLFLOW_STORE }}
+  MLFLOW_ARTIFACT_ROOT: ${{ vars.MLFLOW_ARTIFACT_ROOT }}
   LANGFUSE_DISABLED: "1"
   ONLINE_EVAL_SAMPLE_RATE: "0"
 
@@ -50,15 +53,24 @@ jobs:
         run: |
           pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
-      - name: Live smoke tests (real Gemini + Neo4j Aura)
+      - name: Live smoke tests (real Gemini + Postgres)
         run: python -m pytest tests/live --run-live -q
 
   evaluation:
     needs: live-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write   # keyless Google sign-in, only used when the shared MLflow artifact folder is configured
     steps:
       - uses: actions/checkout@v4
+      - name: Sign in to Google Cloud (only to write the run's files to the shared MLflow bucket folder)
+        if: ${{ vars.MLFLOW_ARTIFACT_ROOT != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/807612796446/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: eval-runner@sagar-crossscan.iam.gserviceaccount.com
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -68,9 +80,13 @@ jobs:
           pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
       - name: Run the golden-set evaluation
-        working-directory: src
-        run: >
-          python run_evaluation.py
-          --limit "${{ github.event.inputs.eval_limit || '6' }}"
-          --llm-metrics "${{ github.event.inputs.llm_metrics || 'none' }}"
-          --no-mlflow
+        env:
+          PYTHONPATH: src
+        run: |
+          # With MLFLOW_STORE=database (a repository variable) the run is logged to the shared store; without it, not logged.
+          EXTRA=""
+          if [ -z "$MLFLOW_STORE" ]; then EXTRA="--no-mlflow"; fi
+          python -m evaluation.run_evaluation \
+            --limit "${{ github.event.inputs.eval_limit || '6' }}" \
+            --llm-metrics "${{ github.event.inputs.llm_metrics || 'none' }}" \
+            $EXTRA

@@ -1,4 +1,4 @@
-import usage_tracker as ut
+from shared import usage_tracker as ut
 
 
 class Meta:

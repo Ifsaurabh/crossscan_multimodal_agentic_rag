@@ -3,7 +3,7 @@ Not wired into the pipeline yet (check_new_documents.py is disabled), but the bu
 blocks are ready, so their behaviour is pinned here."""
 import hashlib
 
-import ingestion_manifest as im
+from ingestion import ingestion_manifest as im
 
 
 class Cursor:
@@ -125,12 +125,15 @@ def test_the_soft_delete_only_touches_a_different_active_version():
     assert "status = 'active'" in soft_delete and "content_hash != %s" in soft_delete  # the same hash is never deleted
 
 
-def test_recording_the_same_version_twice_is_harmless():
+def test_recording_the_same_version_twice_is_harmless_and_makes_a_replaced_version_active_again():
+    """A document that goes A, then B, then A again already has a row for A, now 'deleted': it must become active."""
     conn = Conn()
 
     im.mark_ingested(conn, "paper.pdf", "samehash")
 
-    assert "ON CONFLICT (source_pdf, content_hash) DO NOTHING" in conn.executed[1][0]
+    insert = conn.executed[1][0]
+    assert "ON CONFLICT (source_pdf, content_hash) DO UPDATE" in insert
+    assert "status = 'active'" in insert and "deleted_at = NULL" in insert
 
 
 def test_marking_ingested_commits_once_after_both_statements():

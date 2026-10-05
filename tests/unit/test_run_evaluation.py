@@ -1,6 +1,6 @@
 import json
 
-import run_evaluation as re_
+from evaluation import run_evaluation as re_
 
 
 def make_result(answer="98% accuracy [a.pdf, p.4]", chunks=None, flags=None):

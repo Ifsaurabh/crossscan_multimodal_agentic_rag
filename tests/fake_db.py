@@ -1,6 +1,7 @@
 class FakeCursor:
     def __init__(self, rows):
         self.rows = list(rows)
+        self.rowcount = len(self.rows)
 
     def fetchone(self):
         return self.rows[0] if self.rows else None

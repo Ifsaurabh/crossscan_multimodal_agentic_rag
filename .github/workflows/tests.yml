@@ -2,13 +2,18 @@ name: Tests and deploy (push / PR)
 
 # Fast feedback on every push and PR: unit tests (fully faked) + integration
 # tests (real SQL against a real Postgres+pgvector container, throwaway
-# schema, dropped after). No Neo4j, no Gemini calls here - see live-and-eval.yml
+# schema, dropped after). No Gemini calls here - see live-and-eval.yml
 # for those.
 #
 # DEPLOY: a push to main that passes the tests is built and deployed to Cloud Run by the
 # `deploy` job below. The new revision first gets NO traffic and is health-checked; traffic
 # only moves to it if that check passes, so a broken build never replaces the running app.
 # One-time Google Cloud setup: .github/DEPLOY_SETUP.md
+#
+# The INGESTION WORKER is deployed here too (job `deploy-worker`): when the tests pass and a worker file changed,
+# its image (Dockerfile.worker) is built, pushed to Artifact Registry, and the Cloud Run JOB is created or updated
+# with it. Nothing is built or deployed by hand. One-time setup for the job: .github/WORKER_DEPLOY_SETUP.md
+# The small function that starts the job on every upload (functions/ingest_trigger) is deployed by the job `deploy-trigger`.
 
 on:
   push:
@@ -141,6 +146,7 @@ jobs:
             --project "$PROJECT_ID" --region "$REGION" \
             --image "$IMAGE:$GITHUB_SHA" \
             --no-traffic --tag candidate \
+            --max-instances 5 \
             --update-labels "managed-by=github-actions,commit-sha=$GITHUB_SHA" \
             --quiet
 
@@ -170,3 +176,181 @@ jobs:
         run: |
           echo "The deploy failed before traffic was moved, so users are still on the previous revision."
           gcloud run services update-traffic "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --remove-tags candidate --quiet || true
+
+  deploy-worker:
+    # The ingestion worker (a Cloud Run JOB, not a service): same gate as the app deploy. It only builds and
+    # deploys when something the worker image contains changed (or when started by hand), because the image is big.
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    concurrency:
+      group: deploy-worker
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PROJECT_ID: sagar-crossscan
+      REGION: europe-west1
+      JOB: crossscan-ingest-worker
+      IMAGE: europe-west1-docker.pkg.dev/sagar-crossscan/cloud-run-source-deploy/ifsaurabh-crossscan_multimodal_agentic_rag/crossscan-ingest-worker
+      WORKLOAD_IDENTITY_PROVIDER: projects/807612796446/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+      DEPLOY_SERVICE_ACCOUNT: github-deployer@sagar-crossscan.iam.gserviceaccount.com
+      WORKER_SERVICE_ACCOUNT: ingest-worker@sagar-crossscan.iam.gserviceaccount.com
+      # What the job runs with. DATABASE_URL comes from Secret Manager (the same secret the app uses).
+      SCHEMA_NAME: rag_v2
+      DOCS_BUCKET: crossscan-docs-upload-here
+      DOCS_SUBSCRIPTION: doc-events-sub
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the change check below compares this push with the one before it
+
+      - name: Did anything the worker image contains change?
+        id: changes
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; echo "Started by hand: deploying."; exit 0
+          fi
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; echo "No usable earlier commit: deploying."; exit 0
+          fi
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA"                | grep -E '^(Dockerfile\.worker|Dockerfile\.worker\.dockerignore|requirements-worker\.txt|src/ingestion/|src/shared/)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "No worker file changed: nothing to deploy."
+          fi
+
+      - name: Free disk space (the image is several GB and Docker needs room to build it)
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Sign in to Google Cloud (keyless)
+        if: steps.changes.outputs.changed == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.changes.outputs.changed == 'true'
+
+      - name: Let Docker push to Artifact Registry
+        if: steps.changes.outputs.changed == 'true'
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.changes.outputs.changed == 'true'
+
+      - name: Build and push the worker image (the build runs ingestion.image_check, so every model and tool must load)
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          push: true
+          # Prompt Guard is gated: the token is a BuildKit secret, and the deploy build refuses to ship without it.
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
+          build-args: |
+            REQUIRE_PROMPT_GUARD=1
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+      - name: Create or update the Cloud Run job with the new image
+        if: steps.changes.outputs.changed == 'true'
+        # One task, no automatic retry (a failed run must show up in the log and the dead-letter queue, not loop
+        # and burn compute), up to an hour per run. The job is only DEPLOYED here, never started: a run starts
+        # when you trigger it (or the scheduler does), so a deploy never touches the queue.
+        run: |
+          gcloud run jobs deploy "$JOB"             --project "$PROJECT_ID" --region "$REGION"             --image "$IMAGE:$GITHUB_SHA"             --service-account "$WORKER_SERVICE_ACCOUNT"             --tasks 1 --max-retries 0 --task-timeout 3600s             --cpu 4 --memory 8Gi             --set-env-vars "SCHEMA_NAME=$SCHEMA_NAME,DOCS_BUCKET=$DOCS_BUCKET,DOCS_SUBSCRIPTION=$DOCS_SUBSCRIPTION,GOOGLE_CLOUD_PROJECT=$PROJECT_ID"             --set-secrets "DATABASE_URL=DATABASE_URL:latest"             --labels "managed-by=github-actions,commit-sha=$GITHUB_SHA"             --quiet
+
+      - name: Show what was deployed
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          gcloud run jobs describe "$JOB" --project "$PROJECT_ID" --region "$REGION"             --format="yaml(metadata.name,spec.template.spec.template.spec.containers[0].image,spec.template.spec.template.spec.serviceAccountName)"
+          {
+            echo "### Worker deployed"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Job: \`$JOB\` ($REGION), image \`$IMAGE:$GITHUB_SHA\`"
+            echo "- Schema: \`$SCHEMA_NAME\`"
+            echo "- Start a run: Cloud Run -> Jobs -> $JOB -> Execute (the queue is read only when a run starts)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-trigger:
+    # The function that starts a worker execution on every upload (functions/ingest_trigger). Same gate as the other deploys,
+    # and only when its own files changed (or when started by hand). One-time setup: .github/WORKER_DEPLOY_SETUP.md
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-trigger
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PROJECT_ID: sagar-crossscan
+      REGION: europe-west1
+      FUNCTION: crossscan-ingest-trigger
+      JOB: crossscan-ingest-worker
+      TOPIC: doc-events
+      WORKLOAD_IDENTITY_PROVIDER: projects/807612796446/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+      DEPLOY_SERVICE_ACCOUNT: github-deployer@sagar-crossscan.iam.gserviceaccount.com
+      TRIGGER_SERVICE_ACCOUNT: ingest-trigger@sagar-crossscan.iam.gserviceaccount.com
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Did the trigger function change?
+        id: changes
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; echo "Started by hand: deploying."; exit 0
+          fi
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; echo "No usable earlier commit: deploying."; exit 0
+          fi
+          if git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -E '^functions/ingest_trigger/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "The trigger function did not change: nothing to deploy."
+          fi
+
+      - name: Sign in to Google Cloud (keyless)
+        if: steps.changes.outputs.changed == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.changes.outputs.changed == 'true'
+
+      - name: Deploy the function (it gets its own subscription on the topic, next to the worker's)
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          gcloud functions deploy "$FUNCTION" \
+            --gen2 --project "$PROJECT_ID" --region "$REGION" \
+            --runtime python311 --source functions/ingest_trigger --entry-point trigger \
+            --trigger-topic "$TOPIC" \
+            --service-account "$TRIGGER_SERVICE_ACCOUNT" \
+            --set-env-vars "JOB=$JOB,REGION=$REGION" \
+            --memory 256Mi --timeout 60s --max-instances 3 \
+            --quiet

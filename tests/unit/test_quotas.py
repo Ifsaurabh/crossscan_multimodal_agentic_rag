@@ -1,6 +1,6 @@
 import pytest
 
-import quotas
+from retrieval import quotas
 from fake_db import FakeConn
 
 USAGE_ZERO = {"requests": 0, "prompt_tokens": 0, "output_tokens": 0}
@@ -17,7 +17,7 @@ def clean_env(monkeypatch):
     for name in (
         "USER_DAILY_REQUEST_LIMIT", "USER_DAILY_TOKEN_LIMIT", "ADMIN_DAILY_REQUEST_LIMIT",
         "ADMIN_DAILY_TOKEN_LIMIT", "RATE_LIMIT_PER_MINUTE", "GLOBAL_DAILY_REQUEST_CAP",
-        "DAILY_ACTIVE_USER_CAP", "MAX_CONCURRENT_REQUESTS",
+        "DAILY_ACTIVE_USER_CAP", "MAX_CONCURRENT_REQUESTS", "REGISTRATIONS_PER_DAY",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -48,7 +48,7 @@ def test_evaluate_none_limit_means_unlimited():
 
 def test_limits_for_uses_the_user_default_then_user_overrides(monkeypatch):
     clean_env(monkeypatch)
-    assert quotas.limits_for(make_user("user")) == (3, 200_000)  # 3 messages/day for every signed-in user
+    assert quotas.limits_for(make_user("user")) == (6, 200_000)  # 6 messages/day for every signed-in user
     assert quotas.limits_for(make_user("user", request_limit=5)) == (5, 200_000)
     assert quotas.limits_for(make_user("user", request_limit=0, token_limit=7)) == (0, 7)
 
@@ -131,7 +131,7 @@ def test_check_quota_refuses_over_daily_limit_without_using_a_rate_slot(monkeypa
     limiter = quotas.RateLimiter(limit=1)
 
     with pytest.raises(quotas.QuotaExceeded) as excinfo:
-        quotas.check_quota(_quota_conn(requests=3), make_user(), limiter=limiter)
+        quotas.check_quota(_quota_conn(requests=6), make_user(), limiter=limiter)
 
     assert excinfo.value.reason == "daily_request_limit"
     assert limiter.allow("u1")[0] is True  # slot was not consumed by the refusal
@@ -161,7 +161,7 @@ def test_check_quota_global_cap(monkeypatch):
 
 def test_daily_user_cap_defaults_and_is_env_overridable(monkeypatch):
     clean_env(monkeypatch)
-    assert quotas.daily_user_cap() == 20
+    assert quotas.daily_user_cap() == 10
     monkeypatch.setenv("DAILY_ACTIVE_USER_CAP", "5")
     assert quotas.daily_user_cap() == 5
 
@@ -286,7 +286,7 @@ def test_concurrency_limiter_holds_up_under_real_threads():
 
 def test_global_cap_is_on_by_default_and_env_overridable(monkeypatch):
     clean_env(monkeypatch)
-    assert quotas.global_daily_cap() == quotas.DEFAULT_GLOBAL_DAILY_CAP == 50
+    assert quotas.global_daily_cap() == quotas.DEFAULT_GLOBAL_DAILY_CAP == 100
 
     monkeypatch.setenv("GLOBAL_DAILY_REQUEST_CAP", "200")
     assert quotas.global_daily_cap() == 200
@@ -296,7 +296,7 @@ def test_default_global_cap_blocks_when_reached(monkeypatch):
     clean_env(monkeypatch)
 
     with pytest.raises(quotas.QuotaExceeded) as excinfo:
-        quotas.check_quota(_quota_conn(global_requests=50), make_user(), limiter=quotas.RateLimiter(limit=5))
+        quotas.check_quota(_quota_conn(global_requests=100), make_user(), limiter=quotas.RateLimiter(limit=5))
 
     assert excinfo.value.reason == "global_daily_cap"
 
@@ -311,14 +311,14 @@ def test_global_total_is_not_queried_when_cap_is_explicitly_disabled(monkeypatch
     assert conn.find("SUM(requests)") == []
 
 
-def test_a_regular_user_gets_three_messages_per_day(monkeypatch):
+def test_a_regular_user_gets_six_messages_per_day(monkeypatch):
     clean_env(monkeypatch)
     user = make_user()
 
-    for already_used in (0, 1, 2):  # the 1st, 2nd and 3rd message are allowed
+    for already_used in range(6):  # the 1st to the 6th message are allowed
         quotas.check_quota(_quota_conn(requests=already_used), user, limiter=quotas.RateLimiter(limit=5))
     with pytest.raises(quotas.QuotaExceeded) as excinfo:
-        quotas.check_quota(_quota_conn(requests=3), user, limiter=quotas.RateLimiter(limit=5))  # the 4th
+        quotas.check_quota(_quota_conn(requests=6), user, limiter=quotas.RateLimiter(limit=5))  # the 7th
 
     assert excinfo.value.reason == "daily_request_limit"
 
@@ -351,8 +351,13 @@ def test_registration_is_throttled_service_wide():
     assert "accounts" in str(excinfo.value)
 
 
-def test_registration_limit_default_is_ten_per_hour():
-    assert quotas.DEFAULT_REGISTRATIONS_PER_HOUR == 10
+def test_registration_limit_default_is_ten_per_day():
+    assert quotas.DEFAULT_REGISTRATIONS_PER_DAY == 10
+    assert quotas.registration_limiter.limit() == 10 and quotas.registration_limiter._daily is True
+
+
+def test_a_user_gets_two_messages_a_minute_by_default():
+    assert quotas.DEFAULT_RATE_LIMIT_PER_MINUTE == 2 and quotas.RateLimiter().limit() == 2
 
 
 def test_quota_exceeded_message_is_user_friendly():
@@ -377,8 +382,8 @@ def test_remaining_reports_used_limit_and_left(monkeypatch):
     result = quotas.remaining(conn, make_user())
 
     assert result["requests_used"] == 1
-    assert result["requests_limit"] == 3
-    assert result["requests_left"] == 2
+    assert result["requests_limit"] == 6
+    assert result["requests_left"] == 5
     assert result["tokens_used"] == 1500
     assert result["tokens_left"] == 200_000 - 1500
 
@@ -399,3 +404,68 @@ def test_remaining_reports_no_limits_for_an_admin(monkeypatch):
     assert result["tokens_used"] == 1500
     assert result["requests_limit"] is None and result["requests_left"] is None
     assert result["tokens_limit"] is None and result["tokens_left"] is None
+
+
+# ---------- the day is India's: counters reset at midnight IST (18:30 UTC) ----------
+
+def utc(day, hour, minute=0):
+    import calendar
+    return calendar.timegm((2026, 10, day, hour, minute, 0))
+
+
+def test_the_day_turns_over_at_midnight_india_time_not_utc():
+    before = utc(5, 18, 29)   # 23:59 in India on the 5th
+    after = utc(5, 18, 31)    # 00:01 in India on the 6th
+    assert quotas.ist_midnight(before) == utc(5, 18, 30) - 86400
+    assert quotas.ist_midnight(after) == utc(5, 18, 30)
+    assert quotas.seconds_to_ist_midnight(utc(5, 18, 0)) == 30 * 60 + 1
+
+
+def test_every_daily_counter_asks_for_today_in_india_time():
+    conn = FakeConn(responses=[("usage_daily", [(0, 0, 0)])])
+    quotas.get_usage_today(conn, "u1")
+    quotas.get_global_requests_today(conn)
+    quotas.get_active_users_today(conn)
+    quotas.record_usage(conn, "u1", 1, 1)
+
+    assert len(conn.executed) == 4
+    for sql, _ in conn.executed:
+        assert "Asia/Kolkata" in sql and "current_date" not in sql
+
+
+def test_the_message_says_which_midnight():
+    assert "India time" in quotas.QUOTA_MESSAGES["daily_request_limit"] and "India time" in quotas.QUOTA_MESSAGES["daily_token_limit"]
+
+
+def test_the_daily_signup_cap_counts_since_midnight_india_time_and_says_when_it_reopens():
+    limiter = quotas.RateLimiter(limit=2, daily=True, bucket="registration")
+    evening = utc(5, 17, 0)   # 22:30 in India
+
+    assert limiter.allow("registration", now=evening)[0] and limiter.allow("registration", now=evening + 60)[0]
+    allowed, retry_after = limiter.allow("registration", now=evening + 120)
+    assert allowed is False and retry_after == quotas.seconds_to_ist_midnight(evening + 120)
+
+    assert limiter.allow("registration", now=utc(5, 18, 31))[0] is True   # a minute past India midnight: a new day
+
+
+# ---------- a refused question gives its slot back ----------
+
+def test_a_refunded_slot_can_be_used_again():
+    limiter = quotas.RateLimiter(limit=1)
+    assert limiter.allow("u1", now=0.0)[0] is True
+    assert limiter.allow("u1", now=1.0)[0] is False
+
+    limiter.refund("u1")
+
+    assert limiter.allow("u1", now=2.0)[0] is True
+
+
+def test_refund_rate_slot_gives_a_user_the_slot_back_and_never_touches_an_admin():
+    limiter = quotas.RateLimiter(limit=1)
+    limiter.allow("u1")
+    quotas.refund_rate_slot(None, make_user(), limiter=limiter)
+    assert limiter.allow("u1")[0] is True
+
+    limiter.allow("u1")  # the slot is taken again
+    quotas.refund_rate_slot(None, make_user("admin"), limiter=limiter)
+    assert limiter.allow("u1")[0] is False   # an admin's refund removed nothing of the user's
