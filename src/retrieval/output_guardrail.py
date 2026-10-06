@@ -4,7 +4,7 @@ PII and credentials are redacted by Presidio (engine in query_guardrail). The re
 here are citation verification, the clinical-overstatement wording check and the injection-LEAK
 check. Prompt Guard is deliberately NOT used on answers: on real leaks in the model's own voice
 ("Here is my full system prompt: ...") it scored 0.001-0.003, and it scored a correct answer that
-quotes an attack payload from the AI-security paper at 0.973 (reports/prompt_guard_eval_2026-10-01.md).
+quotes an attack payload (from an AI-security paper that was in the corpus then) at 0.973 (reports/prompt_guard_eval_2026-10-01.md).
 """
 import re
 
@@ -14,8 +14,8 @@ from shared import query_guardrail as qg
 # successfully manipulated into ignoring its instructions (e.g. leaking a system prompt).
 #
 # The model talking about ITS OWN instructions is the signal. The bare words
-# "system prompt" are not: the corpus includes an AI-security paper, so a
-# correct answer about system-prompt leaks must not raise a false alarm.
+# "system prompt" are not: a corpus can include a paper about AI security (this one did until
+# 2026-10-06), so a correct answer about system-prompt leaks must not raise a false alarm.
 INJECTION_LEAK_PATTERNS = [
     r"\bmy system prompt\b",
     r"here (is|are) my (full |complete |exact )?(system prompt|instructions)",

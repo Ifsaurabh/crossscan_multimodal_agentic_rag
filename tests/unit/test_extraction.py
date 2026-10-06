@@ -253,13 +253,30 @@ def test_a_scanned_or_mixed_document_is_extracted_with_ocr_using_the_tesseract_f
     assert seen == [(True, "/usr/bin/tesseract")] and result.ocr_used is True and result.page_chars == [200, 0]
 
 
-def test_an_image_file_is_extracted_with_ocr(tmp_path):
-    converter, seen = FakeConverter(FakeDocument([FakeItem("text", "page text", page=1)])), []
+def test_an_image_file_is_read_by_tesseract_directly_and_docling_is_not_used(tmp_path):
+    read = []
     image = ic.IntakeResult(file_name="page.jpg", outcome=ic.ACCEPT, file_type="image", document_label="scanned", pages=1, image_only_pages=1)
 
-    ex.extract_document(tmp_path / "page.jpg", image, converter_factory(converter, seen), find_tesseract_fn=lambda: "tess")
+    def fake_ocr(path, tesseract_cmd):
+        read.append((path, tesseract_cmd))
+        return [{"label": "text", "level": None, "page": 1, "text": "Lung cancer can be detected early. " * 5}], 1
 
-    assert seen == [(True, "tess")]
+    result = ex.extract_document(tmp_path / "page.jpg", image, lambda ocr, cmd: pytest.fail("Docling must not be used for an image file"),
+                                 find_tesseract_fn=lambda: "tess", ocr_image_fn=fake_ocr)
+
+    assert read == [(tmp_path / "page.jpg", "tess")]
+    assert result.ocr_used is True and result.pages == 1 and result.page_chars == [len("Lung cancer can be detected early. " * 5)]
+    assert result.tables_found == 0 and result.tables_failed == []
+
+
+def test_an_image_that_cannot_be_read_becomes_an_extraction_error_that_names_the_file(tmp_path):
+    image = ic.IntakeResult(file_name="page.jpg", outcome=ic.ACCEPT, file_type="image", document_label="scanned", pages=1, image_only_pages=1)
+
+    def broken(path, tesseract_cmd):
+        raise OSError("disk full")
+
+    with pytest.raises(ex.ExtractionError, match="page.jpg.*OSError.*disk full"):
+        ex.extract_document(tmp_path / "page.jpg", image, lambda ocr, cmd: None, find_tesseract_fn=lambda: "tess", ocr_image_fn=broken)
 
 
 def test_needing_ocr_without_tesseract_is_a_machine_problem_that_names_the_file(tmp_path):
@@ -328,3 +345,88 @@ def test_a_table_without_a_readable_caption_still_comes_through():
 def test_only_table_blocks_have_a_caption_key():
     blocks, _, _ = ex.blocks_from_document(FakeDocument([FakeItem("text", "words", page=1)]))
     assert "caption" not in blocks[0]
+
+
+# ---------- an image file: enlarged, then read whole by Tesseract ----------
+
+def grey_image(width, height=10, color=200):
+    from PIL import Image
+
+    return Image.new("RGB", (width, height), (color, color, color))
+
+
+@pytest.mark.parametrize("width,expected", [(620, 2480), (1000, 2000), (1500, 3000), (2000, 2000), (2600, 2600), (10, 40)])
+def test_a_narrow_image_is_enlarged_towards_two_thousand_pixels_but_never_more_than_four_times(width, expected):
+    enlarged = ex.enlarged_for_ocr(grey_image(width))
+
+    assert enlarged.width == expected and enlarged.mode == "L"
+
+
+def test_paragraphs_are_split_on_blank_lines_and_a_word_split_across_lines_is_joined():
+    text = "Lung cancer screen-\ning is useful.\nIt takes seconds.\n\n\nBenefits of screening\n\n \nQuit smoking!\n"
+
+    assert ex.paragraphs_of(text) == ["Lung cancer screening is useful. It takes seconds.", "Benefits of screening", "Quit smoking!"]
+    assert ex.paragraphs_of("") == [] and ex.paragraphs_of(None) == []
+
+
+class FakeTesseract:
+    """Records the command lines and answers like Tesseract: the text of each page, in order."""
+
+    def __init__(self, texts, returncode=0, stderr=""):
+        self.texts, self.returncode, self.stderr, self.calls = list(texts), returncode, stderr, []
+
+    def __call__(self, command, **kwargs):
+        self.calls.append((command, kwargs))
+        text = self.texts.pop(0) if self.texts else ""
+        return SimpleNamespace(returncode=self.returncode, stdout=text, stderr=self.stderr)
+
+
+def test_every_page_is_read_whole_in_english_and_each_paragraph_is_a_text_block(tmp_path):
+    path = tmp_path / "page.png"
+    grey_image(600, 800).save(path)
+    tesseract = FakeTesseract(["Title line\n\nFirst paragraph here.\nStill the first.\n\nSecond paragraph."])
+
+    blocks, pages = ex.ocr_image_blocks(path, "/usr/bin/tesseract", run=tesseract)
+
+    command = tesseract.calls[0][0]
+    assert command[0] == "/usr/bin/tesseract" and command[2:] == ["stdout", "-l", "eng", "--psm", "3"]
+    assert pages == 1 and [b["page"] for b in blocks] == [1, 1, 1] and {b["label"] for b in blocks} == {"text"}
+    assert [b["text"] for b in blocks] == ["Title line", "First paragraph here. Still the first.", "Second paragraph."]
+
+
+def test_a_multi_page_image_gives_the_page_number_of_each_block(tmp_path):
+    from PIL import Image
+
+    path = tmp_path / "scan.tif"
+    first, second = grey_image(500, 700, 255), grey_image(500, 700, 250)
+    first.save(path, save_all=True, append_images=[second])
+    tesseract = FakeTesseract(["Page one text.", "Page two text."])
+
+    blocks, pages = ex.ocr_image_blocks(path, "tess", run=tesseract)
+
+    assert pages == 2 and [(b["page"], b["text"]) for b in blocks] == [(1, "Page one text."), (2, "Page two text.")]
+
+
+def test_the_image_given_to_tesseract_is_the_enlarged_greyscale_copy(tmp_path):
+    from PIL import Image
+
+    path = tmp_path / "small.jpg"
+    grey_image(620, 826).save(path)
+    seen = {}
+
+    def inspecting(command, **kwargs):
+        with Image.open(command[1]) as sent:
+            seen["size"], seen["mode"] = sent.size, sent.mode
+        return SimpleNamespace(returncode=0, stdout="text", stderr="")
+
+    ex.ocr_image_blocks(path, "tess", run=inspecting)
+
+    assert seen == {"size": (2480, 3304), "mode": "L"}
+
+
+def test_a_tesseract_failure_is_an_extraction_error_with_the_message(tmp_path):
+    path = tmp_path / "page.png"
+    grey_image(600, 800).save(path)
+
+    with pytest.raises(ex.ExtractionError, match="page 1.*bad image"):
+        ex.ocr_image_blocks(path, "tess", run=FakeTesseract([""], returncode=1, stderr="bad image"))

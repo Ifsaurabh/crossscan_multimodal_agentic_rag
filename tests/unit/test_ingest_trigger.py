@@ -97,3 +97,35 @@ def test_the_function_has_its_own_requirements_and_no_dependency_on_the_app_code
     assert "functions-framework" in requirements and "google-cloud-run" in requirements
     source = (ROOT / "functions" / "ingest_trigger" / "main.py").read_text()
     assert "from shared" not in source and "from ingestion" not in source and "from retrieval" not in source
+
+
+# ---------- the project id (a second-generation function is not given GOOGLE_CLOUD_PROJECT) ----------
+
+def test_the_project_comes_from_the_environment_first(trigger):
+    assert trigger.project_id({"GOOGLE_CLOUD_PROJECT": "from-env", "GCP_PROJECT": "other"}, default_project="from-credentials") == "from-env"
+    assert trigger.project_id({"GCP_PROJECT": "legacy"}, default_project="from-credentials") == "legacy"
+
+
+def test_without_it_in_the_environment_the_project_of_the_credentials_is_used(trigger):
+    assert trigger.project_id({}, default_project="from-credentials") == "from-credentials"
+
+
+def test_an_unknown_project_is_an_error_not_a_wrong_job_name(trigger, monkeypatch):
+    fake = types.SimpleNamespace(default=lambda: (None, None))
+    monkeypatch.setitem(sys.modules, "google.auth", fake)
+    monkeypatch.setitem(sys.modules, "google", types.SimpleNamespace(auth=fake))
+    with pytest.raises(RuntimeError, match="project id is unknown"):
+        trigger.project_id({})
+
+
+def test_a_real_upload_starts_the_job_even_when_the_environment_has_no_project(trigger, monkeypatch):
+    started = []
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GCP_PROJECT", raising=False)
+    monkeypatch.setattr(trigger, "project_id", lambda *a, **k: "sagar-crossscan")
+    monkeypatch.setattr(trigger, "start_job", lambda project, region, job, client=None: started.append((project, region, job)) or "exec-1")
+    event = types.SimpleNamespace(data={"message": {"attributes": upload()}})
+
+    trigger.trigger(event)
+
+    assert started == [("sagar-crossscan", trigger.DEFAULT_REGION, trigger.DEFAULT_JOB)]

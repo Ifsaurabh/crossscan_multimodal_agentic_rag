@@ -44,7 +44,7 @@ PII_PLACEHOLDERS = {
 
 # Credential/secret shapes - matches actual key formats, not bare words like
 # "password" (a security paper discussing password policy in prose is not a
-# leak; the AI-security paper in this corpus already contains realistic
+# leak; an AI-security paper (in this corpus until 2026-10-06) contained realistic
 # example payloads, so an actual key-shaped string appearing is plausible).
 CREDENTIAL_PATTERNS = [
     r"\bsk-[A-Za-z0-9]{20,}\b",                                    # OpenAI-style key
@@ -117,14 +117,18 @@ def redact_pii(text: str):
 PROMPT_GUARD_MODEL = "meta-llama/Llama-Prompt-Guard-2-86M"
 # Two thresholds on the model's "malicious" probability: flagging is cheap and
 # only annotates; blocking is reserved for near-certain attacks, so a false
-# positive on a legitimate question (the corpus includes an AI-security paper)
-# is shown as a note instead of refusing the user.
+# positive on a legitimate question (the corpus then included an AI-security paper)
+# was shown as a note instead of refusing the user. Blocking is on since 2026-10-06 (see below).
 INJECTION_FLAG_THRESHOLD = 0.5
-INJECTION_BLOCK_THRESHOLD = 0.95
-# Whether a high model score may BLOCK a user's query. Off: the 86M model scored two legitimate
-# questions ("Explain how jailbreak attacks bypass safety filters", "Please disregard papers
-# before 2020...") as high as real attacks, so no threshold separates them. The score only flags.
-MODEL_BLOCKS_QUERIES = False
+INJECTION_BLOCK_THRESHOLD = 0.5   # the same level as the flag: what the model flags, blocks (owner, 2026-10-06)
+# Whether a high model score may BLOCK a user's query. ON since 2026-10-06 (decision of the owner). It was off because the
+# 86M model scored legitimate questions about attacks ("Explain how jailbreak attacks bypass safety filters") as high as real
+# attacks; those questions came from the AI-security paper, which is no longer in the corpus, so they are out of scope.
+# On a real-world set (deepset/prompt-injections, 403 English prompts: 163 injections, 240 benign) a block level of 0.5
+# blocked 1 of 240 benign prompts and 42 of the 163 injections (the rest are subtle task hijacks the model does not see as
+# jailbreaks; the regex and the output checks stay). See reports/prompt_guard_real_world_2026-10-06.md.
+# The owner chose the model's own 0.5 as the block level (not a higher one): on that set it blocked 1 of 240 benign prompts.
+MODEL_BLOCKS_QUERIES = True
 PROMPT_GUARD_MAX_TOKENS = 512  # the model's context window; longer text is scored in windows
 
 _prompt_guard = None
@@ -229,8 +233,8 @@ def classify_score(score: Optional[float]) -> dict:
 
 
 # ---------- Injection commands (regex) ----------
-# Only COMMANDS aimed at the assistant are matched, never mere mentions: the corpus includes an
-# AI-security paper, so "what is a system prompt leak?" or "how does jailbreaking work?" are
+# Only COMMANDS aimed at the assistant are matched, never mere mentions: a corpus can include an
+# AI-security paper (this one did until 2026-10-06), so "what is a system prompt leak?" or "how does jailbreaking work?" are
 # legitimate questions and must pass, as must "Act as a summariser: ..." or "You are now reading
 # the results section". Role-play phrases therefore only count at the start of a sentence/clause,
 # and only when followed by an unrestricted/different persona.

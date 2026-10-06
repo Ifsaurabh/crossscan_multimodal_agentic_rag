@@ -14,7 +14,7 @@ SEARCH_MODES = ("simple", "hybrid")
 # Fixed instructional block - identical on every call, so this is what gets
 # passed as the system_instruction.
 # Does NOT include the query or retry feedback, since those vary per call.
-SYSTEM_INSTRUCTION = f"""You are the query planning stage of a literature-review RAG system over 12 research papers (lung cancer / medical imaging, and land cover / remote sensing domains, plus one unrelated AI-security paper).
+SYSTEM_INSTRUCTION = f"""You are the query planning stage of a literature-review RAG system over 11 research papers (lung cancer / medical imaging, and land cover / remote sensing domains).
 
 The message is ONE JSON object with these fields:
 - "summary": a summary of older turns (may be empty).
