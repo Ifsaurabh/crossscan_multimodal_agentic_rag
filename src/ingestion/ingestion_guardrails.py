@@ -1,8 +1,8 @@
 """Ingestion guardrail.
 
 PII is redacted by Presidio and injection is scored by Llama Prompt Guard (both
-engines live in query_guardrail). Injection is FLAG-ONLY here: the AI-security
-paper in the corpus legitimately quotes attack phrases, so a flagged section is
+engines live in query_guardrail). Injection is FLAG-ONLY here: a legitimate document
+(for example a paper about AI security) can quote attack phrases, so a flagged section is
 reported (with its score) but never dropped.
 """
 from shared import query_guardrail as qg

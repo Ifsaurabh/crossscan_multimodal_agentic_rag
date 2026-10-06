@@ -3,8 +3,11 @@
 Docling reads the document into blocks (title, headings, paragraphs, lists, captions, tables ...), each with
 its page number. The intake check (intake_check.py) already labelled every page, and that decides how:
   - a text document: no OCR at all (faster, and no noise from reading figures as if they were text);
-  - a scanned or mixed document, or any image file: OCR with Tesseract on, English only, with the page image
-    enlarged 3 times (Docling's own default scale, which made the difference on low-resolution scans).
+  - a scanned or mixed PDF: OCR with Tesseract on, English only, with the page image enlarged 3 times
+    (Docling's own default scale, which made the difference on low-resolution scans);
+  - an image file (a photographed or screenshot page): Docling is NOT used, because it treats a whole-page image as one
+    picture and its region-by-region OCR read a clear handout as gibberish (readable-word share 0.46). The image is
+    enlarged to about 2,000 pixels wide and Tesseract reads the whole page at once (share 0.96 on the same file).
 Tables are exported as markdown. A table that cannot be converted is not dropped silently: it is counted and
 listed, so the quality check (extraction_quality.py) can stop the document.
 
@@ -13,7 +16,10 @@ Windows install. If OCR is needed and Tesseract is missing, OcrUnavailable is ra
 machine, not with the document, so the message is retried).
 """
 import os
+import re
 import shutil
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +33,9 @@ TEXT_LABELS = {"text", "section_header", "footnote", "list_item", "caption", "ti
 OCR_LANGUAGES = ["eng"]   # Docling's default is English, Spanish, French and German; only English is installed
 OCR_SCALE = 3.0           # the page image is enlarged this many times before OCR
 NEEDS_OCR_LABELS = ("scanned", "mixed")
+IMAGE_OCR_TARGET_WIDTH = 2000   # an image file narrower than this is enlarged before OCR (Tesseract reads small text badly)
+IMAGE_OCR_MAX_FACTOR = 4        # but never more than this many times
+TESSERACT_TIMEOUT_SECONDS = 300
 
 
 class OcrUnavailable(Exception):
@@ -75,6 +84,44 @@ def _ensure_tessdata(tesseract_cmd: str, environ=None) -> None:
     tessdata = Path(tesseract_cmd).parent / "tessdata"
     if tessdata.is_dir():
         environ["TESSDATA_PREFIX"] = str(tessdata)
+
+
+def enlarged_for_ocr(frame):
+    """A greyscale copy of one image, enlarged (smoothly) so that it is about IMAGE_OCR_TARGET_WIDTH pixels wide."""
+    from PIL import Image
+
+    grey = frame.convert("L")
+    factor = min(IMAGE_OCR_MAX_FACTOR, max(1, -(-IMAGE_OCR_TARGET_WIDTH // max(1, grey.width))))
+    if factor > 1:
+        grey = grey.resize((grey.width * factor, grey.height * factor), Image.LANCZOS)
+    return grey
+
+
+def paragraphs_of(text: str) -> list:
+    """Tesseract's output as paragraphs: blank lines separate them, a word split across two lines is joined again."""
+    text = re.sub(r"-\n(?=[a-z])", "", text or "")
+    paragraphs = (" ".join(part.split()) for part in re.split(r"\n\s*\n", text))
+    return [p for p in paragraphs if len(p) >= 2]
+
+
+def ocr_image_blocks(path, tesseract_cmd: str, run=subprocess.run):
+    """(blocks, pages) of an image file, read by Tesseract on the whole page of each frame (a TIFF may have several)."""
+    from PIL import Image, ImageSequence
+
+    _ensure_tessdata(tesseract_cmd)
+    blocks, pages = [], 0
+    with Image.open(path) as image, tempfile.TemporaryDirectory() as folder:
+        for number, frame in enumerate(ImageSequence.Iterator(image), 1):
+            pages = number
+            png = Path(folder) / f"page{number}.png"
+            enlarged_for_ocr(frame).save(png, dpi=(300, 300))
+            done = run([tesseract_cmd, str(png), "stdout", "-l", "+".join(OCR_LANGUAGES), "--psm", "3"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       timeout=TESSERACT_TIMEOUT_SECONDS)
+            if done.returncode != 0:
+                raise ExtractionError(f"Tesseract failed on page {number}: {(done.stderr or '').strip()[:200]}")
+            blocks.extend({"label": "text", "level": None, "page": number, "text": p} for p in paragraphs_of(done.stdout))
+    return blocks, pages
 
 
 def build_converter(ocr: bool, tesseract_cmd: str = None) -> DocumentConverter:
@@ -140,7 +187,8 @@ def needs_ocr(intake_result) -> bool:
     return intake_result.document_label in NEEDS_OCR_LABELS
 
 
-def extract_document(path, intake_result, get_converter_fn=get_converter, find_tesseract_fn=find_tesseract) -> ExtractionResult:
+def extract_document(path, intake_result, get_converter_fn=get_converter, find_tesseract_fn=find_tesseract,
+                     ocr_image_fn=ocr_image_blocks) -> ExtractionResult:
     """Extracts one document that passed the intake check. `intake_result` is its intake_check.IntakeResult."""
     ocr = needs_ocr(intake_result)
     tesseract_cmd = None
@@ -153,13 +201,24 @@ def extract_document(path, intake_result, get_converter_fn=get_converter, find_t
             )
 
     started = time.perf_counter()
-    try:
-        document = get_converter_fn(ocr, tesseract_cmd).convert(str(path)).document
-    except Exception as e:
-        raise ExtractionError(f"Docling could not convert {intake_result.file_name}: {type(e).__name__}: {e}") from e
+    if ocr and getattr(intake_result, "file_type", None) == "image":
+        # An image file: Docling would see one picture and lose the text (see the module notes), so Tesseract reads it directly.
+        try:
+            blocks, frames = ocr_image_fn(path, tesseract_cmd)
+        except ExtractionError:
+            raise
+        except Exception as e:
+            raise ExtractionError(f"The image {intake_result.file_name} could not be read: {type(e).__name__}: {e}") from e
+        tables_found, tables_failed = 0, []
+        pages = intake_result.pages or frames
+    else:
+        try:
+            document = get_converter_fn(ocr, tesseract_cmd).convert(str(path)).document
+        except Exception as e:
+            raise ExtractionError(f"Docling could not convert {intake_result.file_name}: {type(e).__name__}: {e}") from e
 
-    blocks, tables_found, tables_failed = blocks_from_document(document)
-    pages = intake_result.pages or len(getattr(document, "pages", {}) or {})
+        blocks, tables_found, tables_failed = blocks_from_document(document)
+        pages = intake_result.pages or len(getattr(document, "pages", {}) or {})
     page_chars = [0] * pages
     for block in blocks:
         if block["page"] and 1 <= block["page"] <= pages:

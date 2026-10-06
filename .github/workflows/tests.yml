@@ -351,6 +351,6 @@ jobs:
             --runtime python311 --source functions/ingest_trigger --entry-point trigger \
             --trigger-topic "$TOPIC" \
             --service-account "$TRIGGER_SERVICE_ACCOUNT" \
-            --set-env-vars "JOB=$JOB,REGION=$REGION" \
+            --set-env-vars "JOB=$JOB,REGION=$REGION,GOOGLE_CLOUD_PROJECT=$PROJECT_ID" \
             --memory 256Mi --timeout 60s --max-instances 3 \
             --quiet

@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-06",
+  "dataset": "deepset/prompt-injections (Hugging Face), train + test, English rows only",
+  "model": "meta-llama/Llama-Prompt-Guard-2-86M",
+  "rows": 403,
+  "regex_alone_caught": 5,
+  "regex_alone_benign_blocked": 0,
+  "thresholds": [
+    {
+      "threshold": 0.5,
+      "injections_caught": 42,
+      "injections": 163,
+      "benign_blocked": 1,
+      "benign": 240,
+      "caught_with_regex": 43
+    },
+    {
+      "threshold": 0.8,
+      "injections_caught": 39,
+      "injections": 163,
+      "benign_blocked": 0,
+      "benign": 240,
+      "caught_with_regex": 40
+    },
+    {
+      "threshold": 0.9,
+      "injections_caught": 37,
+      "injections": 163,
+      "benign_blocked": 0,
+      "benign": 240,
+      "caught_with_regex": 38
+    },
+    {
+      "threshold": 0.95,
+      "injections_caught": 34,
+      "injections": 163,
+      "benign_blocked": 0,
+      "benign": 240,
+      "caught_with_regex": 35
+    },
+    {
+      "threshold": 0.99,
+      "injections_caught": 28,
+      "injections": 163,
+      "benign_blocked": 0,
+      "benign": 240,
+      "caught_with_regex": 30
+    },
+    {
+      "threshold": 0.999,
+      "injections_caught": 9,
+      "injections": 163,
+      "benign_blocked": 0,
+      "benign": 240,
+      "caught_with_regex": 14
+    }
+  ],
+  "decision": "model blocking ON at 0.5, the model's own level (owner, 2026-10-06)"
+}

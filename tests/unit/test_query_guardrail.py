@@ -20,7 +20,7 @@ def test_detect_prompt_injection_ignores_normal_queries():
 
 
 def test_questions_ABOUT_attacks_are_not_treated_as_attacks():
-    """The corpus has an AI-security paper; asking about its topic is legitimate."""
+    """A corpus can include an AI-security paper (this one did until 2026-10-06); asking about its topic is legitimate."""
     assert not qg.detect_prompt_injection("What is a system prompt leak according to the security paper?")
     assert not qg.detect_prompt_injection("How does jailbreaking a language model work?")
     assert not qg.detect_prompt_injection("The encoder layers act as a feature extractor, right?")

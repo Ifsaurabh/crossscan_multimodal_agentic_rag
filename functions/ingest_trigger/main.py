@@ -8,7 +8,8 @@ It does not wait for the job and does not decide anything else: many uploads at 
 worker's lease lets exactly one of them work while the others exit within seconds (ingestion/worker_lease.py).
 
 Settings (environment variables of the function): JOB (default crossscan-ingest-worker), REGION (default europe-west1) and
-GOOGLE_CLOUD_PROJECT (set by Google).
+GOOGLE_CLOUD_PROJECT (set by the deploy; if it is missing, the project is asked from Google's credentials, because a
+second-generation function is not given it for free).
 """
 import os
 
@@ -17,6 +18,21 @@ import functions_framework
 DEFAULT_JOB = "crossscan-ingest-worker"
 DEFAULT_REGION = "europe-west1"
 INCOMING = "incoming/"
+
+
+def project_id(environ=None, default_project=None) -> str:
+    """The project the job lives in: the environment first, then the project of the function's own credentials."""
+    environ = os.environ if environ is None else environ
+    project = environ.get("GOOGLE_CLOUD_PROJECT") or environ.get("GCP_PROJECT")
+    if project:
+        return project
+    if default_project is None:
+        import google.auth
+
+        default_project = google.auth.default()[1]
+    if not default_project:
+        raise RuntimeError("the project id is unknown: set GOOGLE_CLOUD_PROJECT on the function")
+    return default_project
 
 
 def should_start(attributes: dict) -> bool:
@@ -47,6 +63,6 @@ def trigger(cloud_event):
     if not should_start(attributes):
         print(f"ignored: {attributes.get('eventType')} {attributes.get('objectId')}")
         return
-    execution = start_job(os.environ["GOOGLE_CLOUD_PROJECT"], os.environ.get("REGION", DEFAULT_REGION),
+    execution = start_job(project_id(), os.environ.get("REGION", DEFAULT_REGION),
                           os.environ.get("JOB", DEFAULT_JOB))
     print(f"started {execution} for {attributes.get('objectId')}")

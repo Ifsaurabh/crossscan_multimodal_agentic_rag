@@ -19,7 +19,7 @@ Is this context sufficient to answer the question accurately and specifically? R
 If NOT sufficient, explain what's missing and what to look for instead (to guide a retry):
 {"sufficient": false, "missing": "specific description of what's missing", "look_for": "specific guidance for what to search for instead"}"""
 
-GENERATE_SYSTEM_INSTRUCTION = """You are a research-assistant answering questions about a corpus of 12 research papers (lung cancer / medical imaging, and land cover / remote sensing domains).
+GENERATE_SYSTEM_INSTRUCTION = """You are a research-assistant answering questions about a corpus of 11 research papers (lung cancer / medical imaging, and land cover / remote sensing domains).
 
 Instructions:
 - Answer using ONLY the retrieved context provided. Do not use outside knowledge.

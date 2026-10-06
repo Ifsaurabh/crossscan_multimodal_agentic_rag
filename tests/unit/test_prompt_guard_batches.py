@@ -71,5 +71,5 @@ def test_the_default_batch_is_sixteen_windows():
 
 def test_what_a_score_means():
     assert qg.classify_score(None) == {"score": None, "available": False, "flagged": False, "blocked": False}
-    assert qg.classify_score(0.6)["flagged"] is True and qg.classify_score(0.6)["blocked"] is False
-    assert qg.classify_score(0.99)["blocked"] is True and qg.classify_score(0.1)["flagged"] is False
+    assert qg.classify_score(0.6)["flagged"] is True and qg.classify_score(0.6)["blocked"] is True   # flag and block are both 0.5
+    assert qg.classify_score(0.99)["blocked"] is True and qg.classify_score(0.5)["blocked"] is True and qg.classify_score(0.49)["blocked"] is False and qg.classify_score(0.1)["flagged"] is False

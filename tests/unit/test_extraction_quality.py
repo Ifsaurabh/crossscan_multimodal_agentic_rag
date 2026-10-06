@@ -88,3 +88,64 @@ def test_the_result_can_be_stored_as_plain_data():
 
     assert json.loads(json.dumps(data)) == data
     assert set(data) == {"passed", "reason_code", "reason", "reason_codes", "metrics"}
+
+
+# ---------- OCR text that is not readable ----------
+
+VOCABULARY = frozenset("the lung cancer can be detected with low dose screening scan during you will lie down in a donut like "
+                       "structure while rays are passed through your body computers then use these to produce images of inside".split())
+READABLE = ("the lung cancer can be detected with a low dose screening scan during the scan you will lie down in a donut like "
+            "structure while rays are passed through your body computers then use these rays to produce images of the inside")
+GIBBERISH = ("Lang cancer can tmetinebe detec wih nde ceing CT outed nga sn Dantes youl ie dors ina doo ta aya pe Bota keer "
+             "Caner toh SSCESGKE GSLs toes ye drze die hom te creer manypeonle foe kre ccrcal acl Igcanethechon Einitentalsomtner")
+
+
+def ocr_extraction(text, ocr=True):
+    blocks = [{"label": "text", "page": 1, "text": text}]
+    return ex.ExtractionResult(source_name="page.jpg", blocks=blocks, pages=1, page_chars=[len(text)], ocr_used=ocr, seconds=3.0)
+
+
+def test_readable_ocr_text_passes_and_reports_its_share():
+    result = eq.check_extraction(ocr_extraction(READABLE), vocabulary=VOCABULARY)
+
+    assert result.passed and result.metrics["readable_share"] == 1.0 and result.metrics["words"] >= eq.MIN_WORDS_TO_JUDGE
+
+
+def test_unreadable_ocr_text_is_rejected_even_though_it_has_plenty_of_characters():
+    result = eq.check_extraction(ocr_extraction(GIBBERISH), vocabulary=VOCABULARY)
+
+    assert not result.passed and result.reason_code == eq.OCR_UNREADABLE == "ocr_unreadable"
+    assert result.metrics["nearly_empty_pages"] == [] and result.metrics["readable_share"] < eq.MIN_READABLE_SHARE
+    assert "unreadable" in result.reason and "60%" in result.reason and "sharper" in result.reason
+
+
+def test_text_that_was_not_read_by_ocr_is_never_judged_for_readability():
+    result = eq.check_extraction(ocr_extraction(GIBBERISH, ocr=False), vocabulary=VOCABULARY)
+
+    assert result.passed and "readable_share" not in result.metrics
+
+
+def test_too_few_words_are_left_to_the_empty_page_rule():
+    result = eq.check_extraction(ocr_extraction("xqzv wklm " * 8 + "a" * 120), vocabulary=VOCABULARY)
+
+    assert result.passed and result.metrics["readable_share"] is None
+
+
+def test_without_a_vocabulary_the_check_is_skipped_never_a_reason_to_reject():
+    share, words = eq.readable_share(GIBBERISH, vocabulary=frozenset())
+
+    assert share is None and words > 0
+    assert eq.check_extraction(ocr_extraction(GIBBERISH), vocabulary=frozenset()).passed
+
+
+def test_the_limits_for_readability_are_the_measured_ones():
+    assert eq.MIN_READABLE_SHARE == 0.60 and eq.MIN_WORDS_TO_JUDGE == 30
+
+
+def test_the_real_english_vocabulary_separates_a_clear_paragraph_from_gibberish():
+    clear, _ = eq.readable_share(READABLE + " " + READABLE)
+    garbled, _ = eq.readable_share(GIBBERISH)
+
+    if clear is None:
+        return  # spaCy's English model is not installed here: the check is skipped, as designed
+    assert clear > 0.9 and garbled < eq.MIN_READABLE_SHARE
