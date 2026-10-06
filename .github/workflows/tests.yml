@@ -57,7 +57,7 @@ jobs:
       ONLINE_EVAL_SAMPLE_RATE: "0"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -100,7 +100,7 @@ jobs:
       DEPLOY_SERVICE_ACCOUNT: github-deployer@sagar-crossscan.iam.gserviceaccount.com
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free disk space (the image is several GB and Docker needs room to build it)
         run: |
@@ -206,7 +206,7 @@ jobs:
       DOCS_SUBSCRIPTION: doc-events-sub
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # the change check below compares this push with the one before it
 
@@ -313,7 +313,7 @@ jobs:
       TRIGGER_SERVICE_ACCOUNT: ingest-trigger@sagar-crossscan.iam.gserviceaccount.com
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
