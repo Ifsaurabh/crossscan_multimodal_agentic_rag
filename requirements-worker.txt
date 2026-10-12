@@ -6,12 +6,12 @@
 
 # reading documents
 pymupdf==1.28.2
-docling==2.128.0
+docling==2.137.0
 pillow==12.3.0
 
 # models: text and image embeddings, Prompt Guard
-torch==2.14.0
-transformers==5.17.0
+torch==2.14.1
+transformers==5.19.0
 sentence-transformers
 
 # chunking
@@ -30,5 +30,5 @@ pgvector
 python-dotenv
 
 # Google Cloud: the documents bucket and the Pub/Sub queue
-google-cloud-storage==3.16.0
+google-cloud-storage==3.17.0
 google-cloud-pubsub==2.42.0
