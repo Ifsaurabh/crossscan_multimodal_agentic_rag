@@ -45,7 +45,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"
@@ -71,7 +71,7 @@ jobs:
         with:
           workload_identity_provider: projects/807612796446/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: eval-runner@sagar-crossscan.iam.gserviceaccount.com
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: "pip"
