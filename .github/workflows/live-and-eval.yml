@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -64,7 +64,7 @@ jobs:
       contents: read
       id-token: write   # keyless Google sign-in, only used when the shared MLflow artifact folder is configured
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Sign in to Google Cloud (only to write the run's files to the shared MLflow bucket folder)
         if: ${{ vars.MLFLOW_ARTIFACT_ROOT != '' }}
         uses: google-github-actions/auth@v2
