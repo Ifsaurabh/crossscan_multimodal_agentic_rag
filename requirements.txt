@@ -1,36 +1,36 @@
-kagglehub==1.0.2
+kagglehub==1.0.3
 pymupdf==1.28.2
-docling==2.128.0
+docling==2.142.0
 pillow==12.3.0
-transformers==5.17.0
-torch==2.14.0
+transformers==5.20.2
+torch==2.14.1
 tiktoken
 langchain-text-splitters
 pytest
-Faker==40.39.0
+Faker==40.43.0
 sentence-transformers
 psycopg[binary]
 psycopg-pool
 pgvector
 python-dotenv
 google-genai
-langgraph==1.2.11
-deepeval==4.2.3
+langgraph==1.2.16
+deepeval==4.3.1
 ragas==0.4.3
 instructor==1.12.0  # ragas needs from_genai; the newest instructor needs openai 3.x, but openai is pinned to 1.109.1 below
 dvc==3.67.1
-mlflow==3.16.1
+mlflow==3.17.2
 langfuse==4.15.4
-fastapi==0.141.1
-uvicorn==0.53.0
+fastapi==0.161.1
+uvicorn==0.54.0
 httpx
-streamlit==1.64.0
+streamlit==1.66.1
 openai==1.109.1
 anthropic==1.7.0
 
 presidio-analyzer==2.2.364
 presidio-anonymizer==2.2.364
 en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
-google-cloud-storage==3.16.0
-google-cloud-pubsub==2.42.0
+google-cloud-storage==3.17.1
+google-cloud-pubsub==2.43.0
 psycopg2-binary  # MLflow's SQLAlchemy driver for a Postgres tracking store (evaluation only)
